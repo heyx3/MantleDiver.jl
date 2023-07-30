@@ -55,6 +55,7 @@ function julia_main()::Cint
 
         SETUP = begin
             # Randomize the game each time, but print the random seed used.
+            # That way we can debug weird things that happen.
             game_seed = rand(UInt)
             println("Seed used: ", game_seed)
             Random.seed!(game_seed)
@@ -127,7 +128,7 @@ function julia_main()::Cint
 
             # Update game logic.
             elapsed_seconds += LOOP.delta_seconds
-            update_cab!(cab, LOOP.delta_seconds)
+            update_cab!(cab, rock_grid, LOOP.delta_seconds)
             cab_view = get_cab_view(cab, elapsed_seconds)
             if exists(turning_target) # Update cab rotation
                 full_move_quat = fquat(cab.facing_dir, turning_target)
@@ -147,106 +148,107 @@ function julia_main()::Cint
             end
             player_rock_cell::v3i = rock_grid_idx(cab_view.pos)
 
-            # Debug render the game with Dear ImGUI.
-            size_window_proportionately(Box2Df(min=Vec(0.01, 0.01), max=Vec(0.25, 0.99)))
+            # Use GUI widgets to debug render two perpendicular slices of the game.
+            size_window_proportionately(Box2Df(min=Vec(0.01, 0.01), max=Vec(0.49, 0.99)))
             gui_window("DebugWorldView", C_NULL, CImGui.ImGuiWindowFlags_NoDecoration) do
                 # The UI Y axis corresponds to the world Z axis.
                 # The UI X axis will correspond to either the X or Y axis.
-                # Pick the one that's closer to the cab's facing direction.
-                ui_x_axis::Int = next_move_dir.axis
-                other_x_axis::Int = mod1(ui_x_axis + 1, 2)
+                for ui_x_axis in (1, 2)
+                    other_x_axis::Int = mod1(ui_x_axis + 1, 2)
 
-                # Draw the rock grid along this slice.
-                sub_wnd_pos = convert(v2i, CImGui.GetWindowPos())
-                sub_wnd_size = convert(v2i, CImGui.GetWindowSize())
-                DRAW_BORDER = 10
-                DRAW_SPACING = 5
-                element_count::v2i = vsize(rock_grid)[ui_x_axis, 3]
-                draw_size_2d::v2f = convert(v2f, 1 / element_count) *
-                                    (sub_wnd_size - (DRAW_BORDER * 2) -
-                                       (DRAW_SPACING * (element_count - 1)))
-                draw_size = min(draw_size_2d...)
-                draw_min_pos(cell_2d::v2f) = +(
-                    sub_wnd_pos, # Low-level drawing is in screen position rather than GUI window position
-                    DRAW_BORDER, # Padding
-                    let ipart = map(trunc, cell_2d) # Grid cell offset
-                        (draw_size + DRAW_SPACING) * (ipart - 1)
-                    end,
-                    let fpart = map(f -> f - trunc(f), cell_2d) # Fractional cell offset
-                        draw_size * fpart
-                    end
-                )
-                sub_wnd_drawing::Ptr = CImGui.GetWindowDrawList()
-                for element::v2i in 1:element_count
-                    rock_cell = v3i(i ->
-                        if i==ui_x_axis
-                            element.x
-                        elseif i==other_x_axis
-                            player_rock_cell[other_x_axis]
-                        elseif i==3
-                            element_count.y - element.y + 1
-                        else
-                            error("Unexpected axis ", i,
-                                    "UIx:", ui_x_axis,
-                                    "  other: ", other_x_axis)
+                    # Draw the rock grid along this slice.
+                    sub_wnd_pos = convert(v2i, CImGui.GetWindowPos())
+                    sub_wnd_size = convert(v2i, CImGui.GetWindowSize())
+                    DRAW_BORDER = 10
+                    DRAW_SPACING = 5
+                    element_count::v2i = vsize(rock_grid)[ui_x_axis, 3]
+                    draw_size_2d::v2f = convert(v2f, 1 / element_count) *
+                                        ((sub_wnd_size / v2f(2, 1)) - (DRAW_BORDER * 2) -
+                                         (DRAW_SPACING * (element_count - 1)))
+                    draw_size = min(draw_size_2d...)
+                    draw_min_pos(cell_2d::v2f) = +(
+                        sub_wnd_pos, # Low-level drawing is in screen position rather than GUI window position
+                        v2i(sub_wnd_size.x * (ui_x_axis - 1) ÷ 2, 0), # Offset based on which slice is being drawn
+                        DRAW_BORDER, # Padding
+                        let ipart = map(trunc, cell_2d) # Grid cell offset
+                            (draw_size + DRAW_SPACING) * (ipart - 1)
+                        end,
+                        let fpart = map(f -> f - trunc(f), cell_2d) # Fractional cell offset
+                            draw_size * fpart
                         end
                     )
+                    sub_wnd_drawing::Ptr = CImGui.GetWindowDrawList()
+                    for element::v2i in 1:element_count
+                        rock_cell = v3i(i ->
+                            if i==ui_x_axis
+                                element.x
+                            elseif i==other_x_axis
+                                player_rock_cell[other_x_axis]
+                            elseif i==3
+                                element_count.y - element.y + 1
+                            else
+                                error("Unexpected axis ", i,
+                                        "UIx:", ui_x_axis,
+                                        "  other: ", other_x_axis)
+                            end
+                        )
 
-                    draw_min = draw_min_pos(convert(v2f, element))
-                    draw_max = draw_min + draw_size
+                        draw_min = draw_min_pos(convert(v2f, element))
+                        draw_max = draw_min + draw_size
 
-                    # Generate a unique ID for each iteration of this loop,
-                    #    otherwise Dear ImGUI will conflate all these widgets.
-                    gui_with_nested_id(element.x + (element.y * element_count.x)) do
-                        if rock_grid[rock_cell] == RockTypes.plain
-                            CImGui.ImDrawList_AddRectFilled(sub_wnd_drawing,
-                                                            draw_min, draw_max,
-                                                            CImGui.ImVec4(0.4, 0.15, 0.01, 1),
-                                                            @f32(0), CImGui.ImDrawCornerFlags_None)
-                        elseif rock_grid[rock_cell] == RockTypes.gold
-                            CImGui.ImDrawList_AddRectFilled(sub_wnd_drawing,
-                                                            draw_min, draw_max, #0xE5aa06ff
-                                                            CImGui.ImVec4(0.93, 0.66, 0.05, 1),
-                                                            @f32(0), CImGui.ImDrawCornerFlags_None)
-                        elseif rock_grid[rock_cell] == RockTypes.empty
-                            # Draw nothing
-                        else
-                            error("Unhandled case: ", rock_grid[rock_cell])
+                        # Generate a unique ID for each iteration of this loop,
+                        #    otherwise Dear ImGUI will conflate all these widgets.
+                        gui_with_nested_id(element.x + (element.y * element_count.x)) do
+                            if rock_grid[rock_cell] == RockTypes.plain
+                                CImGui.ImDrawList_AddRectFilled(sub_wnd_drawing,
+                                                                draw_min, draw_max,
+                                                                CImGui.ImVec4(0.4, 0.15, 0.01, 1),
+                                                                @f32(0), CImGui.LibCImGui.ImDrawFlags_None)
+                            elseif rock_grid[rock_cell] == RockTypes.gold
+                                CImGui.ImDrawList_AddRectFilled(sub_wnd_drawing,
+                                                                draw_min, draw_max, #0xE5aa06ff
+                                                                CImGui.ImVec4(0.93, 0.66, 0.05, 1),
+                                                                @f32(0), CImGui.ImDrawFlags_None)
+                            elseif rock_grid[rock_cell] == RockTypes.empty
+                                # Draw nothing
+                            else
+                                error("Unhandled case: ", rock_grid[rock_cell])
+                            end
                         end
                     end
-                end
 
-                # Display the player among the rocks.
-                player_ui_grid_pos = v2f(cab_view.pos[ui_x_axis],
-                                         element_count.y - cab_view.pos[3] + 1)
-                player_draw_pos = draw_min_pos(player_ui_grid_pos + @f32(0.5))
-                CImGui.ImDrawList_AddCircle(sub_wnd_drawing,
-                                            player_draw_pos, 10,
-                                            CImGui.ImVec4(0.2, 1, 0.5, 1),
-                                            0, 3)
-                player_ui_forward = v2f(cab_view.forward[ui_x_axis], cab_view.forward[3])
-                scaled_forward = @f32(15) *
-                                   map(sign, player_ui_forward) *
-                                   (abs(player_ui_forward) ^ @f32(2))
-                CImGui.ImDrawList_AddLine(sub_wnd_drawing,
-                                          player_draw_pos,
-                                          player_draw_pos + scaled_forward,
-                                          CImGui.ImVec4(1, 0.7, 0.7, 1),
-                                          3)
+                    # Display the player among the rocks.
+                    player_ui_grid_pos = v2f(cab_view.pos[ui_x_axis],
+                                             element_count.y - cab_view.pos[3] + 1)
+                    player_draw_pos = draw_min_pos(player_ui_grid_pos + @f32(0.5))
+                    CImGui.ImDrawList_AddCircle(sub_wnd_drawing,
+                                                player_draw_pos, 10,
+                                                CImGui.ImVec4(0.2, 1, 0.5, 1),
+                                                0, 3)
+                    player_ui_forward = v2f(cab_view.forward[ui_x_axis], cab_view.forward[3])
+                    scaled_forward = @f32(15) *
+                                     map(sign, player_ui_forward) *
+                                     (abs(player_ui_forward) ^ @f32(2))
+                    CImGui.ImDrawList_AddLine(sub_wnd_drawing,
+                                              player_draw_pos,
+                                              player_draw_pos + scaled_forward,
+                                              CImGui.ImVec4(1, 0.7, 0.7, 1),
+                                              3)
+                end
             end
 
             # Provide some turn and movement controls.
-            size_window_proportionately(Box2Df(min=Vec(0.51, 0.01), max=Vec(0.75, 0.99)))
+            size_window_proportionately(Box2Df(min=Vec(0.51, 0.01), max=Vec(0.99, 0.99)))
             gui_with_padding(CImGui.ImVec2(20, 20)) do
             gui_window("TurnAndMovement", C_NULL, CImGui.ImGuiWindowFlags_NoDecoration) do
-                # Disable buttons when turning or movement is happening.
+                # Disable certain buttons under certain conditions.
                 function panel_button(button_args...;
                                       disable_when_turning::Bool = false,
                                       disable_when_moving::Bool = false,
                                       force_disable::Bool = false)::Bool
                     disable_button = force_disable ||
                                      (disable_when_turning && (vdot(turning_target, cab.facing_dir) > 0.01)) ||
-                                     (disable_when_moving && exists(cab.current_movement))
+                                     (disable_when_moving && exists(cab.current_action))
 
                     disable_button && CImGui.PushStyleColor(CImGui.ImGuiCol_Button,
                                                              CImGui.ImVec4(0.65, 0.4, 0.4, 1))
@@ -276,7 +278,7 @@ function julia_main()::Cint
                                           convert(v2f, CImGui.GetItemRectMin()) - 5,
                                           convert(v2f, CImGui.GetItemRectMax()) + 5,
                                           CImGui.ImVec4(0.6, 0.6, 0.9, 1),
-                                          10, CImGui.ImDrawCornerFlags_All,
+                                          10, CImGui.LibCImGui.ImDrawFlags_RoundCornersAll,
                                           3)
 
                 # Edit the 'flip' direction with a little slider.
@@ -293,20 +295,27 @@ function julia_main()::Cint
                     is_legal.(LEGAL_MOVES, Ref(next_move_dir),
                               Ref(player_rock_cell), Ref(rock_grid))
                 if panel_button("x"; disable_when_moving=true, force_disable=!forward_is_legal)
-                    cab.current_movement = CabMovementState(MOVE_FORWARD, next_move_dir)
+                    cab.current_action = CabMovementState(MOVE_FORWARD, next_move_dir)
                 end
                 CImGui.SameLine()
                 CImGui.Dummy(10, 0)
                 CImGui.SameLine()
                 if panel_button("^^"; disable_when_moving=true, force_disable=!climb_is_legal)
-                    cab.current_movement = CabMovementState(MOVE_CLIMB, next_move_dir)
+                    cab.current_action = CabMovementState(MOVE_CLIMB, next_move_dir)
                 end
                 CImGui.SameLine()
                 CImGui.Dummy(10, 0)
                 CImGui.SameLine()
                 if panel_button("V"; disable_when_moving=true, force_disable=!drop_is_legal)
-                    cab.current_movement = CabMovementState(MOVE_DROP, next_move_dir)
+                    cab.current_action = CabMovementState(MOVE_DROP, next_move_dir)
                 end
+
+                CImGui.Dummy(0, 50)
+
+                # Provide buttons for drilling.
+                CImGui.Text("DRILL"); CImGui.SameLine()
+                CImGui.Dummy(10, 0); CImGui.SameLine()
+
 
             end end # Window and padding
         end
