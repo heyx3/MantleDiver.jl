@@ -163,7 +163,6 @@ const ALL_MOVEMENT_DIRS = collect(
 
 "Transforms a cab movement vector from its canonical direction into the given direction"
 function rotate_cab_movement(v::Vec3, dir::CabMovementDir)::typeof(v)
-    right_axis = mod1(dir.axis + 1, 2)
     return Vec(
         if dir.axis == 1
             dir.dir * v.x
@@ -185,14 +184,12 @@ The forward direction of movement is specified as an 'axis' of 1 or 2, and a 'di
 "
 function is_legal(move::CabMovement, dir::CabMovementDir,
                   start_grid_pos::v3i, grid::RockGrid)::Bool
-    grid_idx_range = Box3Di(min=one(v3i), max=vsize(grid))
-    is_free(grid_idx) = is_touching(grid_idx_range, grid_idx) && (grid[grid_idx] == RockTypes.empty)
+    is_free(grid_idx) = grid_pos_free(grid_idx, grid)
 
     # All keyframed positions should occupy empty space.
     for key::CabMovementKeyframe in move.keyframes
         grid_pos_f = start_grid_pos + rotate_cab_movement(key.delta_pos, dir)
         grid_pos = rock_grid_idx(grid_pos_f)
-        CImGui.Text("\tKeyframe pos $grid_pos\n\t\t(from $grid_pos_f) is $(is_free(grid_pos) ? "" : "not ") free\n\t\tSource: $(key.delta_pos)\n\t\tBecomes: $(rotate_cab_movement(key.delta_pos, dir))")
         if !is_free(grid_pos)
             return false
         end
@@ -201,7 +198,6 @@ function is_legal(move::CabMovement, dir::CabMovementDir,
     # All explicit 'solid' positions should be solid.
     for offset in move.solid_surfaces
         grid_pos = start_grid_pos + rotate_cab_movement(offset, dir)
-        CImGui.Text("\tWall pos $grid_pos\n\t\t(from $start_grid_pos + rot($offset))\n\t\tis $(is_free(grid_pos) ? "" : "not ") free")
         if is_free(grid_pos)
             return false
         end
@@ -325,7 +321,7 @@ function drill_shake_strengths(cds::CabDrillState,
     N_SEGMENTS = 10
     rng = ConstPRNG(cds.seed)
     for i in 1:N_SEGMENTS
-        bucket = rand(rng, 1:NShakeModes)
+        (bucket, rng) = rand(rng, 1:NShakeModes)
         @set! output[bucket] += @f32(1 / N_SEGMENTS)
     end
 
@@ -370,7 +366,7 @@ function get_cab_view(cab::CabState, elapsed_seconds::Float32)::@NamedTuple{pos:
         final_pos += cab.current_action.pos
         apply_cam_shake(cab.current_action.shake_strengths)
     elseif cab.current_action isa CabDrillState
-        pos += cab.current_action.pos
+        final_pos += cab.current_action.pos
         apply_cam_shake(drill_shake_strengths(cab.current_action, elapsed_seconds))
     end
 
@@ -387,7 +383,7 @@ function update_cab!(cab::CabState, rock_grid::RockGrid, delta_seconds::Float32)
     elseif cab.current_action isa CabDrillState
         is_done = update_drill!(cab.current_action, delta_seconds)
         if is_done
-            cab.grid_pos += caab.current_action.pos
+            cab.grid_pos += cab.current_action.pos
 
             grid_pos = rock_grid_idx(cab.grid_pos)
             drilled_rock = rock_grid[grid_pos]

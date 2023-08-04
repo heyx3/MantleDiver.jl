@@ -26,18 +26,7 @@ macro shout(data...)
     end
 end
 
-
-@bp_enum(RockTypes::UInt8,
-    empty = 0,
-    plain = 1,
-    gold = 2
-)
-const RockGrid = Array{E_RockTypes, 3}
-
-# Integer values represent the center of a rock grid cell.
-rock_grid_idx(pos::v3f) = convert(v3i, round(pos))
-
-
+include("rock_grid.jl")
 include("cab.jl")
 
 
@@ -284,9 +273,9 @@ function julia_main()::Cint
                 # Edit the 'flip' direction with a little slider.
                 next_move_flip_ui = convert(Cint, inv_lerp_i(-1, 1, next_move_dir.flip))
                 @c CImGui.SliderInt("Side", &next_move_flip_ui,
-                                     0, 1,
-                                     "",
-                                     CImGui.ImGuiSliderFlags_None)
+                                    0, 1,
+                                    "",
+                                    CImGui.ImGuiSliderFlags_None)
                 @set! next_move_dir.flip = Int8(inv_lerp_i(-1, +1, next_move_flip_ui))
 
                 # Provide buttons for all movements with the given 'flip' direction.
@@ -294,29 +283,54 @@ function julia_main()::Cint
                 (forward_is_legal, climb_is_legal, drop_is_legal) =
                     is_legal.(LEGAL_MOVES, Ref(next_move_dir),
                               Ref(player_rock_cell), Ref(rock_grid))
-                if panel_button("x"; disable_when_moving=true, force_disable=!forward_is_legal)
+                if panel_button("x##Move"; disable_when_moving=true, force_disable=!forward_is_legal)
                     cab.current_action = CabMovementState(MOVE_FORWARD, next_move_dir)
                 end
                 CImGui.SameLine()
                 CImGui.Dummy(10, 0)
                 CImGui.SameLine()
-                if panel_button("^^"; disable_when_moving=true, force_disable=!climb_is_legal)
+                if panel_button("^^##Move"; disable_when_moving=true, force_disable=!climb_is_legal)
                     cab.current_action = CabMovementState(MOVE_CLIMB, next_move_dir)
                 end
                 CImGui.SameLine()
                 CImGui.Dummy(10, 0)
                 CImGui.SameLine()
-                if panel_button("V"; disable_when_moving=true, force_disable=!drop_is_legal)
+                if panel_button("V##Move"; disable_when_moving=true, force_disable=!drop_is_legal)
                     cab.current_action = CabMovementState(MOVE_DROP, next_move_dir)
                 end
 
                 CImGui.Dummy(0, 50)
 
                 # Provide buttons for drilling.
+                function is_drill_legal(canonical_dir::Vec3)
+                    drilled_pos = cab_view.pos + convert(v3f, rotate_cab_movement(canonical_dir, next_move_dir))
+                    drilled_grid_pos = rock_grid_idx(drilled_pos)
+                    return is_touching(Box3Di(min=one(v3i), size=vsize(rock_grid)), drilled_grid_pos) &&
+                           (rock_grid[drilled_grid_pos] != RockTypes.empty)
+                end
                 CImGui.Text("DRILL"); CImGui.SameLine()
                 CImGui.Dummy(10, 0); CImGui.SameLine()
-
-
+                if panel_button("*##Drill"; disable_when_moving=true,
+                                     force_disable=!is_drill_legal(v3f(1, 0, 0)))
+                #begin
+                    cab.current_action = CabDrillState(DrillDirection(next_move_dir.axis,
+                                                                      next_move_dir.dir),
+                                                       elapsed_seconds)
+                end
+                CImGui.SameLine()
+                if panel_button("V##Drill"; disable_when_moving=true,
+                                      force_disable=!is_drill_legal(v3f(0, 0, -1)))
+                #begin
+                    cab.current_action = CabDrillState(DrillDirection(3, -1), elapsed_seconds)
+                end
+                CImGui.SameLine()
+                if panel_button(">>##Drill6"; disable_when_moving=true,
+                                      force_disable=!is_drill_legal(v3f(0, 1, 0)))
+                #begin
+                    cab.current_action = CabDrillState(DrillDirection(mod1(next_move_dir.axis + 1, 2),
+                                                                      next_move_dir.dir * next_move_dir.flip),
+                                                       elapsed_seconds)
+                end
             end end # Window and padding
         end
     end
