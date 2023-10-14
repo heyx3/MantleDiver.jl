@@ -1,7 +1,22 @@
-"Gets whether an entity can hold more than one of the given type of component"
+"
+Gets whether an entity can hold more than one of the given type of component.
+
+If your components inherit from another abstract component type,
+    it's illegal for the abstract type to return a different value than the concrete child types.
+"
 allow_multiple(::Type{<:AbstractComponent})::Bool = true
 
-"Gets the types of components required by the given component"
+"
+Gets the types of components required by the given component.
+
+If your components inherit from another abstract component type,
+    it's illegal for the abstract type to specify requirements
+    unless the concrete child types also specify them.
+
+If you name an abstract component type as a requirement,
+    make sure to define `create_component()` for that abstract type
+    (i.e. a default to use if the component doesn't already exist).
+"
 require_components(::Type{<:AbstractComponent})::Tuple = ()
 
 
@@ -11,9 +26,9 @@ Creates a new component that will be attached to the given entity.
 Any dependent components named in `require_components()` will already be available,
     except in recursive cases where multiple components require each other.
 
-By default, invokes the component's constructor and passes the entity.
+By default, invokes the component's constructor with no arguments.
 "
-create_component(T::Type{<:AbstractComponent}, e::Entity)::T = T(e)
+create_component(T::Type{<:AbstractComponent}, e::Entity)::T = T()
 
 "Cleans up a component that was attached to the given entity"
 destroy_component(::AbstractComponent, ::Entity, is_entity_dying::Bool) = nothing

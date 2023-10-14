@@ -46,13 +46,32 @@ export add_entity, remove_entity
 
 ##   Managing components   ##
 
-function add_component(T::Type{<:AbstractComponent}, e::Entity
+"
+Returns a tuple of the component type, its parent type, etc.
+   up to (but not including) `AbstractComponent`
+"
+function get_component_types(::Type{T})::Tuple{Vararg{Type}} where {T<:AbstractComponent}
+    if T == AbstractComponent
+        return ()
+    elseif supertype(T) == AbstractComponent
+        return (T, )
+    else
+        return (T, @inline(get_component_types(supertype(T)))...)
+    end
+end
+
+"
+Any other components that are required by the new component will be added first,
+    if not in the entity already.
+"
+function add_component(::Type{T}, e::Entity
                        ;
                        # Internal parameter -- do not use.
                        # Ignores certain elements of `require_components()`
                        #    that are currently in the process of being added already,
                        #    to prevent an infinite loop from components requiring each other.
-                       ignore_requirements::Optional{Set{Type{<:AbstractComponent}}} = nothing)
+                       ignore_requirements::Optional{Set{Type{<:AbstractComponent}}} = nothing
+                      )::T where {T<:AbstractComponent}
     world::World = e.world
 
     # Check that this operation is valid.
@@ -82,23 +101,27 @@ function add_component(T::Type{<:AbstractComponent}, e::Entity
     # Finally, construct the desired component and add it to all the lookups.
     component::T = create_component(T, e)
     push!(e.components, component)
-    push!(get!(() -> Set{AbstractComponent}(),
-               world.component_lookup[e], T),
-          component)
-    push!(get!(() -> Set{_Entity{World}}(),
-               world.entity_lookup, T),
-          e)
-    world.component_counts[T] = get(world.component_counts, T, 0) + 1
+    for super_T in get_component_types(T)
+        push!(get!(() -> Set{AbstractComponent}(),
+                   world.component_lookup[e], super_T),
+              component)
+        push!(get!(() -> Set{_Entity{World}}(),
+                   world.entity_lookup, super_T),
+              e)
+        world.component_counts[super_T] = get(world.component_counts, super_T, 0) + 1
+    end
 
     return component
 end
+"
+This is allowed even if the component is required by another one.
+It's up to you to make sure your components either handle that or avoid that!
+"
 function remove_component(c::AbstractComponent, e::Entity
                           ;
                           # Internal optimization hints. Do not use.
                           component_idx::Int = 0,
                           entity_is_dying::Bool = false)
-    @nospecialize(c)
-
     @ecs_assert(c in e.components, "Can't remove a nonexistent component")
     if component_idx < 1
         component_idx = findfirst(c2 -> c2==c, e.components)
@@ -109,27 +132,31 @@ function remove_component(c::AbstractComponent, e::Entity
     # Remove the component from global lookups.
     T = typeof(c)
     lookup_entity_per_type = e.world.component_lookup[e]
-    component_set = lookup_entity_per_type[T]
-    @ecs_assert(c in component_set)
-    delete!(component_set, c)
-    if isempty(component_set)
-        if !entity_is_dying # If the owning entity is dying, this whole lookup is dead anyway
-            delete!(lookup_entity_per_type, T)
+    for super_T in get_component_types(T)
+        component_set = lookup_entity_per_type[super_T]
+        @ecs_assert(c in component_set)
+        delete!(component_set, c)
+
+        if isempty(component_set)
+            if !entity_is_dying # If the owning entity is dying, this whole lookup is dead anyway
+                delete!(lookup_entity_per_type, super_T)
+            end
+            delete!(e.world.entity_lookup[super_T], e)
         end
-        delete!(e.world.entity_lookup[T], e)
-    end
-    n_components_in_world = e.world.component_counts[T]
-    n_components_in_world -= 1
-    if n_components_in_world > 0
-        e.world.component_counts[T] = n_components_in_world
-    else
-        delete!(e.world.component_counts, T)
+
+        n_components_in_world = e.world.component_counts[super_T]
+        n_components_in_world -= 1
+        if n_components_in_world > 0
+            e.world.component_counts[super_T] = n_components_in_world
+        else
+            delete!(e.world.component_counts, super_T)
+        end
     end
 
     return nothing
 end
 
-export add_component, remove_component
+export get_component_types, add_component, remove_component
 
 
 ##   Querying components   ##

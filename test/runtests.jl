@@ -58,7 +58,7 @@ end
     # Component1 is not a singleton, and requires a Component2.
     mutable struct Component1 <: AbstractComponent
         i::Int
-        Component1(entity, i = -1) = new(i)
+        Component1(i = -1) = new(i)
     end
     ECS.allow_multiple(::Type{Component1}) = true
     ECS.require_components(::Type{Component1}) = (Component2, )
@@ -66,30 +66,38 @@ end
     # Component2 is a singleton and has no requirements.
     mutable struct Component2 <: AbstractComponent
         s::String
-        Component2(entity, s = "") = new(s)
+        Component2(s = "") = new(s)
     end
     ECS.allow_multiple(::Type{Component2}) = false
     ECS.require_components(::Type{Component2}) = ()
 
     # Component3 is a singleton, and requires a Component4.
     mutable struct Component3 <: AbstractComponent end
-    Component3(entity) = Component3()
     ECS.allow_multiple(::Type{Component3}) = false
     ECS.require_components(::Type{Component3}) = (Component2, Component4)
 
     # Component4 is not a singleton, and requires a Component3.
     mutable struct Component4 <: AbstractComponent end
-    Component4(entity) = Component4()
     ECS.allow_multiple(::Type{Component4}) = true
     ECS.require_components(::Type{Component4}) = (Component3, )
+
+    # Component5 and Component6 are subtypes of an abstract component type.
+    abstract type Component_5_or_6 <: AbstractComponent end
+    mutable struct Component5 <: Component_5_or_6 end
+    mutable struct Component6 <: Component_5_or_6 end
+    ECS.allow_multiple(::Type{Component5}) = true
+    ECS.allow_multiple(::Type{Component6}) = true
 
     # Define references to all the testable data.
     world = World()
     entities = Entity[ ]
     c1s = Component1[ ]
     c2 = Ref{Component2}()
+    c2_2 = Ref{Component2}()
     c3 = Ref{Component3}()
     c4s = Component4[ ]
+    c5s = Component5[ ]
+    c6s = Component6[ ]
     EMPTY_ENTITY_COMPONENT_LOOKUP = Dict{Type{<:AbstractComponent}, Set{AbstractComponent}}()
 
     @testset "Entities" begin
@@ -117,6 +125,12 @@ end
     end
 
     @testset "Components" begin
+        @testset "Hierarchies" begin
+            @test collect(get_component_types(Component2)) == [ Component2 ]
+            @test collect(get_component_types(Component5)) == [ Component5, Component_5_or_6 ]
+            @test collect(get_component_types(Component_5_or_6)) == [ Component_5_or_6 ]
+        end
+
         @testset "Adding a C2 to E1" begin
             c2[] = add_component(Component2, entities[1])
 
@@ -211,13 +225,13 @@ end
 
             # It should also have added Component2.
             @test has_component(entities[2], Component2)
-            c2_2 = get_component(entities[2], Component2)
+            c2_2[] = get_component(entities[2], Component2)
 
             @test entities[1].components == [ c2[], c1s... ]
-            @test entities[2].components == [ c2_2, c3[], c4s... ]
+            @test entities[2].components == [ c2_2[], c3[], c4s... ]
 
             @test Set(get_components(world, Component2)) ==
-                    Set([ (c2[], entities[1]), (c2_2, entities[2]) ])
+                    Set([ (c2[], entities[1]), (c2_2[], entities[2]) ])
             @test world.component_lookup == Dict(
                 entities[1] => Dict(
                     Component2 => Set([ c2[] ]),
@@ -226,7 +240,7 @@ end
                 entities[2] => Dict(
                     Component3 => Set([ c3[] ]),
                     Component4 => Set(c4s),
-                    Component2 => Set([ c2_2 ])
+                    Component2 => Set([ c2_2[] ])
                 )
             )
             @test world.entity_lookup == Dict(
@@ -240,6 +254,105 @@ end
                 Component2 => 2,
                 Component3 => 1,
                 Component4 => 1
+            )
+        end
+
+        @testset "Component inheritance part 1" begin
+            # Add Component5 and check that it's also registered under its abstract parent type.
+
+            push!(c5s, add_component(Component5, entities[1]))
+            @test count(x->true, get_components(entities[1], Component5)) == 1
+            @test count(x->true, get_components(entities[1], Component_5_or_6)) == 1
+            @test count(x->true, get_components(world, Component5)) == 1
+            @test count(x->true, get_components(world, Component_5_or_6)) == 1
+
+            @test entities[1].components == [ c2[], c1s..., c5s... ]
+            @test entities[2].components == [ c2_2[], c3[], c4s... ]
+
+            @test Set(get_components(world, Component5)) ==
+                    Set([ (c5s[1], entities[1]) ])
+            @test Set(get_components(world, Component_5_or_6)) ==
+                    Set([ (c5s[1], entities[1]) ])
+
+            @test world.component_lookup == Dict(
+                entities[1] => Dict(
+                    Component2 => Set([ c2[] ]),
+                    Component1 => Set(c1s),
+                    Component5 => Set(c5s),
+                    Component_5_or_6 => Set(c5s)
+                ),
+                entities[2] => Dict(
+                    Component3 => Set([ c3[] ]),
+                    Component4 => Set(c4s),
+                    Component2 => Set([ c2_2[] ])
+                )
+            )
+            @test world.entity_lookup == Dict(
+                Component2 => Set([ entities[1], entities[2] ]),
+                Component1 => Set([ entities[1] ]),
+                Component3 => Set([ entities[2] ]),
+                Component4 => Set([ entities[2] ]),
+                Component5 => Set([ entities[1] ]),
+                Component_5_or_6 => Set([ entities[1] ])
+            )
+            @test world.component_counts == Dict(
+                Component1 => 2,
+                Component2 => 2,
+                Component3 => 1,
+                Component4 => 1,
+                Component5 => 1,
+                Component_5_or_6 => 1,
+            )
+        end
+        @testset "Component inheritance part 2" begin
+            # Add Component6 and check that it's also registered under its abstract parent type,
+            #    shared with the Component5 added in the previous test.
+
+            push!(c6s, add_component(Component6, entities[1]))
+            @test count(x->true, get_components(entities[1], Component6)) == 1
+            @test count(x->true, get_components(entities[1], Component_5_or_6)) == 2
+            @test count(x->true, get_components(world, Component6)) == 1
+            @test count(x->true, get_components(world, Component_5_or_6)) == 2
+
+            @test entities[1].components == [ c2[], c1s..., c5s..., c6s... ]
+            @test entities[2].components == [ c2_2[], c3[], c4s... ]
+
+            @test Set(get_components(world, Component6)) ==
+                    Set([ (c6s[1], entities[1]) ])
+            @test Set(get_components(world, Component_5_or_6)) ==
+                    Set([ (c5s[1], entities[1]), (c6s[1], entities[1]) ])
+
+            @test world.component_lookup == Dict(
+                entities[1] => Dict(
+                    Component2 => Set([ c2[] ]),
+                    Component1 => Set(c1s),
+                    Component5 => Set(c5s),
+                    Component6 => Set(c6s),
+                    Component_5_or_6 => Set([ c5s..., c6s... ])
+                ),
+                entities[2] => Dict(
+                    Component3 => Set([ c3[] ]),
+                    Component4 => Set(c4s),
+                    Component2 => Set([ c2_2[] ])
+                )
+            )
+            @test world.entity_lookup == Dict(
+                Component2 => Set([ entities[1], entities[2] ]),
+                Component1 => Set([ entities[1] ]),
+                Component3 => Set([ entities[2] ]),
+                Component4 => Set([ entities[2] ]),
+                Component5 => Set([ entities[1] ]),
+                Component6 => Set([ entities[1] ]),
+                Component_5_or_6 => Set([ entities[1] ])
+            )
+            @test world.component_counts == Dict(
+                Component1 => 2,
+                Component2 => 2,
+                Component3 => 1,
+                Component4 => 1,
+                Component5 => 1,
+                Component6 => 1,
+                Component_5_or_6 => 2,
             )
         end
     end
