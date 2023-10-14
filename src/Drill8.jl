@@ -26,6 +26,9 @@ macro shout(data...)
     end
 end
 
+include("ECS/ECS.jl")
+using .ECS
+
 include("rock_grid.jl")
 include("cab.jl")
 
