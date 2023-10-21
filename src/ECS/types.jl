@@ -3,8 +3,8 @@ abstract type AbstractComponent end
 
 "
 An organized collection of components.
-The `World` type is defined afterwards, so it's hidden through a type parameter here.
 
+The `World` type is defined afterwards, so it's hidden through a type parameter here.
 You should refer to this type using the alias `Entity`.
 "
 mutable struct _Entity{TWorld}

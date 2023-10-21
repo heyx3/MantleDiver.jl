@@ -64,13 +64,16 @@ end
 Any other components that are required by the new component will be added first,
     if not in the entity already.
 "
-function add_component(::Type{T}, e::Entity
+function add_component(::Type{T}, e::Entity,
+                       args...
                        ;
                        # Internal parameter -- do not use.
                        # Ignores certain elements of `require_components()`
                        #    that are currently in the process of being added already,
                        #    to prevent an infinite loop from components requiring each other.
-                       ignore_requirements::Optional{Set{Type{<:AbstractComponent}}} = nothing
+                       ignore_requirements::Optional{Set{Type{<:AbstractComponent}}} = nothing,
+
+                       kw_args...
                       )::T where {T<:AbstractComponent}
     world::World = e.world
 
@@ -99,7 +102,7 @@ function add_component(::Type{T}, e::Entity
     end
 
     # Finally, construct the desired component and add it to all the lookups.
-    component::T = create_component(T, e)
+    component::T = create_component(T, e, args...; kw_args...)
     push!(e.components, component)
     for super_T in get_component_types(T)
         push!(get!(() -> Set{AbstractComponent}(),
