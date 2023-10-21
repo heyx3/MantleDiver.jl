@@ -116,6 +116,8 @@ end
 "
 This is allowed even if the component is required by another one.
 It's up to you to make sure your components either handle that or avoid that!
+
+NOTE: the named keywords are for internal use; do not use them.
 "
 function remove_component(c::AbstractComponent, e::Entity
                           ;

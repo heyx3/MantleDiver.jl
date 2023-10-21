@@ -26,9 +26,9 @@ Creates a new component that will be attached to the given entity.
 Any dependent components named in `require_components()` will already be available,
     except in recursive cases where multiple components require each other.
 
-By default, invokes the component's constructor with no arguments.
+By default, invokes the component's constructor with any provided arguments.
 "
-create_component(T::Type{<:AbstractComponent}, e::Entity)::T = T()
+create_component(T::Type{<:AbstractComponent}, e::Entity, args...; kw_args...)::T = T(args...; kw_args...)
 
 "Cleans up a component that was attached to the given entity"
 destroy_component(::AbstractComponent, ::Entity, is_entity_dying::Bool) = nothing

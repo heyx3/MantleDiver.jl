@@ -132,7 +132,8 @@ end
         end
 
         @testset "Adding a C2 to E1" begin
-            c2[] = add_component(Component2, entities[1])
+            c2[] = add_component(Component2, entities[1], "hi world")
+            @test c2[].s == "hi world"
 
             @test entities[1].components == [ c2[] ]
 
