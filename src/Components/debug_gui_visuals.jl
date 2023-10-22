@@ -33,21 +33,21 @@ end
 Converts a world position/area into GUI space.
 The output Z coordinate becomes 'depth'; the GUI panel is at Z=0.
 "
-function world_to_gui(v::Vec3, data::DebugGuiRenderData)
+function world_to_gui(v::Vec3, data::DebugGuiRenderData)::v3f
     v_gui_axes = v3f(
         v[data.horizontal_axis],
         v[3],
         v[data.other_horizontal_axis]
     )
     t = inv_lerp(vappend(min_inclusive(data.world_voxel_range), -@f32(0.5)),
-                 vappend(max_inclusive(data.world_voxel_range), @f3(0.5)),
+                 vappend(max_inclusive(data.world_voxel_range), @f32(0.5)),
                  v_gui_axes)
-    return lerp(min_inclusive(data.gui_range),
-                max_inclusive(data.gui_range),
+    return lerp(vappend(min_inclusive(data.gui_range), -@f32(0.5)),
+                vappend(max_inclusive(data.gui_range), @f32(0.5)),
                 t)
 end
-function world_to_gui(b::Box3D, data::DebugGuiRenderData)
-    return Box3D(
+function world_to_gui(b::Box3D, data::DebugGuiRenderData)::Box3Df
+    return Box3Df(
         min=world_to_gui(min_inclusive(b), data),
         max=world_to_gui(max_inclusive(b), data)
     )
@@ -77,7 +77,7 @@ function gui_visualize(b::DebugGuiVisualsComponent_Rock, e::Entity, data::DebugG
             data.draw_list,
             min_inclusive(gui_rect).xy,
             max_inclusive(gui_rect).xy,
-            if has_component(entity, GoldComponent)
+            if has_component(e, GoldComponent)
                 CImGui.ImVec4(0.93, 0.66, 0.05, 1)
             else
                 CImGui.ImVec4(0.4, 0.15, 0.01, 1)
@@ -92,7 +92,7 @@ end
 @kwdef mutable struct DebugGuiVisualsComponent_DrillPod <: AbstractDebugGuiVisualsComponent
     body_color::vRGBAf = Vec(0.2, 1, 0.5, 1)
     radius::Float32 = 10
-    thickness::Float3 = 3
+    thickness::Float32 = 3
 
     arrow_color::vRGBAf = Vec(1, 0.7, 0.7, 1)
     arrow_length_scale::Float32 = 15
@@ -119,7 +119,7 @@ function gui_visualize(dp::DebugGuiVisualsComponent_DrillPod, e::Entity, data::D
         data.draw_list,
         gui_pos.xy,
         dp.radius,
-        dp.body_color,
+        CImGui.ImVec4(dp.body_color...),
         0,
         dp.thickness
     )
@@ -127,7 +127,7 @@ function gui_visualize(dp::DebugGuiVisualsComponent_DrillPod, e::Entity, data::D
         data.draw_list,
         gui_pos.xy,
         gui_pos.xy + gui_forward.xy,
-        dp.arrow_color,
+        CImGui.ImVec4(dp.arrow_color...),
         dp.arrow_thickness
     )
 end

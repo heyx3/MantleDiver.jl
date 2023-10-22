@@ -3,7 +3,7 @@
 mutable struct GridManagerComponent <: AbstractComponent
     entities::Array{Optional{ECS.Entity}, 3}
 
-    GridManagerComponent(size::Vec3{<:Integer}) = GridManagerComponent(Array{Optional{ECS.Entity}, 3}(nothing, size...))
+    GridManagerComponent(size::Vec3{<:Integer}) = new(Array{Optional{ECS.Entity}, 3}(nothing, size...))
 end
 ECS.allow_multiple(::Type{GridManagerComponent}) = false
 
@@ -33,7 +33,7 @@ function ECS.create_component(::Type{GridElementComponent}, entity::Entity,
     grid_element = GridElementComponent(args...; kw_args...)
 
     # Register it with the grid.
-    (grid, grid_entity) = get_component(e.world, GridManagerComponent)
+    (grid, grid_entity) = get_component(entity.world, GridManagerComponent)
     @bp_check(isnothing(grid.entities[pos]), "A grid element already exists at ", pos)
     grid.entities[pos] = entity
 

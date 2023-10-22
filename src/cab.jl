@@ -159,13 +159,13 @@ end
 #  Movement Orientation
 
 struct CabMovementDir
-    grid::GridDirections
+    grid::GridDirection
     flip::Int8 # Sideways direction: -1 for left, +1 for right
 end
 
 const ALL_MOVEMENT_DIRS = Tuple(
     CabMovementDir(grid, flip)
-      for grid in GridDirections.instances
+      for grid in GridDirections.instances()
       for flip in (-1, +1)
 )
 

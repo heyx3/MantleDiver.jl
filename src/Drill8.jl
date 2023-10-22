@@ -35,6 +35,8 @@ using .ECS
     plain = 1,
     gold = 2
 )
+grid_pos(world_pos::Vec3)::v3i = round(Int32, world_pos)
+include("grid_directions.jl")
 include("cab.jl")
 
 include("Components/transforms.jl")
@@ -58,9 +60,6 @@ function julia_main()::Cint
             game_seed = rand(UInt)
             println("Seed used: ", game_seed)
             Random.seed!(game_seed)
-
-            ecs_world::World = World()
-            entity_grid = make_grid(ecs_world)
 
             # Generate the rock grid.
             rock_grid = fill(RockTypes.plain, 4, 4, 16)
@@ -93,6 +92,10 @@ function julia_main()::Cint
                 rock_grid[pos] = RockTypes.gold
             end
 
+            # Set up the ECS world.
+            ecs_world::World = World()
+            entity_grid = make_grid(ecs_world, vsize(rock_grid))
+
             # Turn the generated grid of data into real entities.
             for grid_pos in 1:vsize(rock_grid)
                 if rock_grid[grid_pos] != RockTypes.empty
@@ -105,16 +108,19 @@ function julia_main()::Cint
             entity_player = make_player(
                 ecs_world,
                 begin
-                    local pos::Vec2{Int}
+                    local pos::v2i
+                    pos3D()::v3i = vappend(pos, top_rock_layer - 1)
                     @do_while begin
-                        pos = rand(1:get_horz(vsize(rock_grid).xy))
-                    end (rock_grid[vappend(pos, top_rock_layer - 1)] == RockTypes.empty)
+                        pos = rand(1:get_horz(vsize(rock_grid)))
+                    end (rock_grid[pos3D()] == RockTypes.empty)
+                    pos3D()
                 end
             )
 
             # Initialize the GUI for turning and moving.
             TURN_SPEED_DEG_PER_SECOND = 180
             TURN_INCREMENT_DEG = 30
+            next_move_flip::Int8 = 1
 
             elapsed_seconds::Float32 = @f32(0)
 
@@ -135,7 +141,7 @@ function julia_main()::Cint
 
             # Update game logic.
             elapsed_seconds += LOOP.delta_seconds
-            tick_world(ecs_world, LOOP.delta_seconds)
+            ECS.tick_world(ecs_world, LOOP.delta_seconds)
 
             # Use GUI widgets to debug render two perpendicular slices of the game.
             size_window_proportionately(Box2Df(min=Vec(0.01, 0.01), max=Vec(0.49, 0.99)))
@@ -255,14 +261,8 @@ function julia_main()::Cint
             size_window_proportionately(Box2Df(min=Vec(0.51, 0.01), max=Vec(0.99, 0.99)))
             gui_with_padding(CImGui.ImVec2(20, 20)) do
             gui_window("TurnAndMovement", C_NULL, CImGui.ImGuiWindowFlags_NoDecoration) do
-                # Disable certain buttons under certain conditions.
-                function panel_button(button_args...;
-                                      disable_when_turning::Bool = false,
-                                      disable_when_moving::Bool = false,
-                                      force_disable::Bool = false)::Bool
-                    disable_button = force_disable ||
-                                     (disable_when_turning && (vdot(turning_target, cab.facing_dir) > 0.01)) ||
-                                     (disable_when_moving && exists(cab.current_action))
+                function maneuver_button(button_args...; force_disable::Bool = false)::Bool
+                    disable_button = force_disable || player_is_busy(entity_player)
 
                     disable_button && CImGui.PushStyleColor(CImGui.ImGuiCol_Button,
                                                              CImGui.ImVec4(0.65, 0.4, 0.4, 1))
@@ -275,16 +275,18 @@ function julia_main()::Cint
                 # Provide 'turn' buttons.
                 gui_within_group() do
                     BUTTON_SIZE = (50, 25)
-                    if panel_button("<--", BUTTON_SIZE)
-                        turning_target = q_apply(fquat(v3f(0, 0, 1), -deg2rad(TURN_INCREMENT_DEG)),
-                                                 turning_target)
+                    if maneuver_button("<--", BUTTON_SIZE)
+                        turn = fquat(get_up_vector(), -deg2rad(TURN_INCREMENT_DEG))
+                        new_orientation = get_orientation(entity_player) >> turn
+                        player_start_turning(entity_player, new_orientation)
                     end
                     CImGui.SameLine()
                     CImGui.Dummy(BUTTON_SIZE[1] * 1.0, 1)
                     CImGui.SameLine()
-                    if panel_button("-->", BUTTON_SIZE)
-                        turning_target = q_apply(fquat(v3f(0, 0, 1), deg2rad(TURN_INCREMENT_DEG)),
-                                                 turning_target)
+                    if maneuver_button("-->", BUTTON_SIZE)
+                        turn = fquat(get_up_vector(), -deg2rad(TURN_INCREMENT_DEG))
+                        new_orientation = get_orientation(entity_player) >> turn
+                        player_start_turning(entity_player, new_orientation)
                     end
                 end
                 # Draw a box around the 'turn' buttons' interface.
@@ -296,65 +298,64 @@ function julia_main()::Cint
                                           3)
 
                 # Edit the 'flip' direction with a little slider.
-                next_move_flip_ui = convert(Cint, inv_lerp_i(-1, 1, next_move_dir.flip))
+                next_move_flip_ui = convert(Cint, inv_lerp_i(-1, +1, next_move_flip))
                 @c CImGui.SliderInt("Side", &next_move_flip_ui,
                                     0, 1,
                                     "",
                                     CImGui.ImGuiSliderFlags_None)
-                @set! next_move_dir.flip = Int8(inv_lerp_i(-1, +1, next_move_flip_ui))
+                @set! next_move_flip = convert(Int8, lerp(-1, +1, next_move_flip_ui))
 
-                # Provide buttons for all movements with the given 'flip' direction.
+                # Provide buttons for all movements, with the current 'flip' direction.
+                current_grid_direction = grid_dir(get_orientation(entity_player))
+                current_move_dir = CabMovementDir(current_grid_direction, next_move_flip)
                 (MOVE_FORWARD, MOVE_CLIMB, MOVE_DROP) = LEGAL_MOVES
                 (forward_is_legal, climb_is_legal, drop_is_legal) =
-                    is_legal.(LEGAL_MOVES, Ref(next_move_dir),
+                    is_legal.(LEGAL_MOVES, Ref(current_move_dir),
                               Ref(player_rock_cell), Ref(rock_grid))
-                if panel_button("x##Move"; disable_when_moving=true, force_disable=!forward_is_legal)
-                    cab.current_action = CabMovementState(MOVE_FORWARD, next_move_dir)
+                if maneuver_button("x##Move"; force_disable=!forward_is_legal)
+                    player_start_moving(entity_player, MOVE_FORWARD, current_move_dir)
                 end
                 CImGui.SameLine()
                 CImGui.Dummy(10, 0)
                 CImGui.SameLine()
-                if panel_button("^^##Move"; disable_when_moving=true, force_disable=!climb_is_legal)
-                    cab.current_action = CabMovementState(MOVE_CLIMB, next_move_dir)
+                if maneuver_button("^^##Move"; force_disable=!climb_is_legal)
+                    player_start_moving(entity_player, MOVE_CLIMB, current_move_dir)
                 end
                 CImGui.SameLine()
                 CImGui.Dummy(10, 0)
                 CImGui.SameLine()
-                if panel_button("V##Move"; disable_when_moving=true, force_disable=!drop_is_legal)
-                    cab.current_action = CabMovementState(MOVE_DROP, next_move_dir)
+                if maneuver_button("V##Move"; force_disable=!drop_is_legal)
+                    player_start_moving(entity_player, MOVE_DROP, current_move_dir)
                 end
 
                 CImGui.Dummy(0, 50)
 
                 # Provide buttons for drilling.
                 function is_drill_legal(canonical_dir::Vec3)
-                    drilled_pos = cab_view.pos + convert(v3f, rotate_cab_movement(canonical_dir, next_move_dir))
-                    drilled_grid_pos = rock_grid_idx(drilled_pos)
+                    world_dir::v3f = rotate_cab_movement(convert(v3f, canonical_dir),
+                                                         current_move_dir)
+                    drilled_pos = get_precise_position(entity_player) + world_dir
+                    drilled_grid_pos = grid_pos(drilled_pos)
                     return is_touching(Box3Di(min=one(v3i), size=vsize(rock_grid)), drilled_grid_pos) &&
                            (rock_grid[drilled_grid_pos] != RockTypes.empty)
                 end
                 CImGui.Text("DRILL"); CImGui.SameLine()
                 CImGui.Dummy(10, 0); CImGui.SameLine()
-                if panel_button("*##Drill"; disable_when_moving=true,
-                                     force_disable=!is_drill_legal(v3f(1, 0, 0)))
+                if maneuver_button("*##Drill"; force_disable=!is_drill_legal(v3f(1, 0, 0)))
                 #begin
-                    cab.current_action = CabDrillState(DrillDirection(next_move_dir.axis,
-                                                                      next_move_dir.dir),
-                                                       elapsed_seconds)
+                    player_start_drilling(entity_player, current_grid_direction)
                 end
                 CImGui.SameLine()
-                if panel_button("V##Drill"; disable_when_moving=true,
-                                      force_disable=!is_drill_legal(v3f(0, 0, -1)))
+                if maneuver_button("V##Drill"; force_disable=!is_drill_legal(v3f(0, 0, -1)))
                 #begin
-                    cab.current_action = CabDrillState(DrillDirection(3, -1), elapsed_seconds)
+                    player_start_drilling(entity_player, grid_dir(-get_up_axis()))
                 end
                 CImGui.SameLine()
-                if panel_button(">>##Drill6"; disable_when_moving=true,
-                                      force_disable=!is_drill_legal(v3f(0, 1, 0)))
+                if maneuver_button(">>##Drill6"; force_disable=!is_drill_legal(v3f(0, 1, 0)))
                 #begin
-                    cab.current_action = CabDrillState(DrillDirection(mod1(next_move_dir.axis + 1, 2),
-                                                                      next_move_dir.dir * next_move_dir.flip),
-                                                       elapsed_seconds)
+                    side_axis = mod1(grid_axis(current_move_dir) + 1, 2)
+                    side_sign = grid_sign(current_move_dir) * next_move_flip
+                    player_start_drilling(entity_player, grid_dir(side_axis, side_sign))
                 end
             end end # Window and padding
         end

@@ -2,10 +2,10 @@
 
 ##   Grid   ##
 
-function make_grid(world::World)::Entity
+function make_grid(world::World, size::Vec3{<:Integer})::Entity
     entity = add_entity(world)
 
-    grid = add_component(GridManagerComponent, entity)
+    grid = add_component(GridManagerComponent, entity, size)
 
     return entity
 end
@@ -13,10 +13,10 @@ end
 
 ##   Player   ##
 
-function make_player(world::World, pos::v3f)::Entity
+function make_player(world::World, pos::Vec3)::Entity
     entity = add_entity(world)
 
-    pos = add_component(ContinuousPosition, entity, pos)
+    pos_component = add_component(ContinuousPosition, entity, convert(v3f, pos))
     debug_visuals = add_component(DebugGuiVisualsComponent_DrillPod, entity)
 
     return entity
@@ -79,10 +79,10 @@ end
 
 ##   Rocks   ##
 
-function make_rock(world::World, pos::v3i, is_gold::Bool)::Entity
+function make_rock(world::World, grid_pos::Vec3{<:Integer}, is_gold::Bool)::Entity
     entity = add_entity(world)
 
-    pos = add_component(DiscreteVoxelPosition, entity, pos)
+    pos_component = add_component(DiscreteVoxelPosition, entity, grid_pos)
     debug_visuals = add_component(DebugGuiVisualsComponent_Rock, entity)
     grid_element = add_component(GridElementComponent, entity)
     gold_marker = if is_gold
