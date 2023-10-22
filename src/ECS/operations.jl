@@ -171,12 +171,8 @@ const EMPTY_COMPONENT_SET = Set{AbstractComponent}()
 const EMPTY_ENTITY_SET = Set{Entity}()
 
 function has_component(e::Entity, T::Type{<:AbstractComponent})::Bool
-    entity_component_lookup = e.world.component_lookup[e]
-    if haskey(entity_component_lookup, T)
-        return !isempty(entity_component_lookup[T])
-    else
-        return false
-    end
+    relevant_entities = get(e.world.entity_lookup, T, EMPTY_ENTITY_SET)
+    return e in relevant_entities
 end
 
 "Throws an error if there is more than one of the given type of component for the given entity"
