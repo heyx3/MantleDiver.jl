@@ -64,13 +64,16 @@ end
 Any other components that are required by the new component will be added first,
     if not in the entity already.
 "
-function add_component(::Type{T}, e::Entity
+function add_component(::Type{T}, e::Entity,
+                       args...
                        ;
                        # Internal parameter -- do not use.
                        # Ignores certain elements of `require_components()`
                        #    that are currently in the process of being added already,
                        #    to prevent an infinite loop from components requiring each other.
-                       ignore_requirements::Optional{Set{Type{<:AbstractComponent}}} = nothing
+                       ignore_requirements::Optional{Set{Type{<:AbstractComponent}}} = nothing,
+
+                       kw_args...
                       )::T where {T<:AbstractComponent}
     world::World = e.world
 
@@ -99,7 +102,7 @@ function add_component(::Type{T}, e::Entity
     end
 
     # Finally, construct the desired component and add it to all the lookups.
-    component::T = create_component(T, e)
+    component::T = create_component(T, e, args...; kw_args...)
     push!(e.components, component)
     for super_T in get_component_types(T)
         push!(get!(() -> Set{AbstractComponent}(),
@@ -155,6 +158,9 @@ function remove_component(c::AbstractComponent, e::Entity
         end
     end
 
+    # Let it know about the destruction.
+    destroy_component(c, e, entity_is_dying)
+
     return nothing
 end
 
@@ -168,12 +174,8 @@ const EMPTY_COMPONENT_SET = Set{AbstractComponent}()
 const EMPTY_ENTITY_SET = Set{Entity}()
 
 function has_component(e::Entity, T::Type{<:AbstractComponent})::Bool
-    entity_component_lookup = e.world.component_lookup[e]
-    if haskey(entity_component_lookup, T)
-        return !isempty(entity_component_lookup[T])
-    else
-        return false
-    end
+    relevant_entities = get(e.world.entity_lookup, T, EMPTY_ENTITY_SET)
+    return e in relevant_entities
 end
 
 "Throws an error if there is more than one of the given type of component for the given entity"
