@@ -209,16 +209,16 @@ function is_legal(move::CabMovement, dir::CabMovementDir,
     # All keyframed positions should occupy empty space.
     for key::CabMovementKeyframe in move.keyframes
         grid_pos_f = start_grid_pos + rotate_cab_movement(key.delta_pos, dir)
-        grid_pos = rock_grid_idx(grid_pos_f)
-        if !is_free(grid_pos)
+        grid_position = grid_pos(grid_pos_f)
+        if !is_free(grid_position)
             return false
         end
     end
 
     # All explicit 'solid' positions should be solid.
     for offset in move.solid_surfaces
-        grid_pos = start_grid_pos + rotate_cab_movement(offset, dir)
-        if is_free(grid_pos)
+        grid_position = start_grid_pos + rotate_cab_movement(offset, dir)
+        if is_free(grid_position)
             return false
         end
     end

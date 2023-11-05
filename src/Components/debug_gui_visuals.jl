@@ -4,6 +4,11 @@ abstract type AbstractDebugGuiVisualsComponent <: AbstractComponent end
 # By default, GUI drawer components require some kind of position data.
 ECS.require_components(::Type{<:AbstractDebugGuiVisualsComponent}) = (AbstractVoxelPositionComponent, )
 
+"Lower values should be drawn first"
+draw_order(v::AbstractDebugGuiVisualsComponent, e::Entity)::Int64 = let p = get_voxel_position(e)
+    p.x + (1000 * p.y) + (1000000 * p.z)
+end
+
 
 ##   DebugGuiRenderData   ##
 
@@ -19,7 +24,7 @@ struct DebugGuiRenderData
 
     DebugGuiRenderData(horizontal_axis, depth, gui_range, world_voxel_range, draw_list) = new(
         horizontal_axis,
-        mod1(horizontal_axis + 1, 3),
+        mod1(horizontal_axis + 1, 2),
         depth,
 
         gui_range,
@@ -30,27 +35,41 @@ struct DebugGuiRenderData
 end
 
 "
-Converts a world position/area into GUI space.
+Converts a world position/vector/area into GUI space.
 The output Z coordinate becomes 'depth'; the GUI panel is at Z=0.
 "
-function world_to_gui(v::Vec3, data::DebugGuiRenderData)::v3f
+function world_to_gui(v::Vec3, data::DebugGuiRenderData, is_vector::Bool = false)::v3f
     v_gui_axes = v3f(
         v[data.horizontal_axis],
         v[3],
         v[data.other_horizontal_axis]
     )
-    t = inv_lerp(vappend(min_inclusive(data.world_voxel_range), -@f32(0.5)),
-                 vappend(max_inclusive(data.world_voxel_range), @f32(0.5)),
-                 v_gui_axes)
-    return lerp(vappend(min_inclusive(data.gui_range), -@f32(0.5)),
-                vappend(max_inclusive(data.gui_range), @f32(0.5)),
-                t)
+    # Flip the Y component.
+    if is_vector
+        @set! v_gui_axes.y = -v_gui_axes.y
+        return v_gui_axes
+    else
+        t2 = inv_lerp(
+            min_inclusive(data.world_voxel_range),
+            max_inclusive(data.world_voxel_range),
+            v_gui_axes.xy
+        )
+        @set! t2.y = @f32(1) - t2.y
+        return vappend(
+            lerp(min_inclusive(data.gui_range),
+                 max_inclusive(data.gui_range),
+                 t2),
+            v_gui_axes.z
+        )
+    end
 end
 function world_to_gui(b::Box3D, data::DebugGuiRenderData)::Box3Df
-    return Box3Df(
-        min=world_to_gui(min_inclusive(b), data),
-        max=world_to_gui(max_inclusive(b), data)
-    )
+    (a, b) = (world_to_gui(min_inclusive(b), data),
+              world_to_gui(max_inclusive(b), data))
+    # Axes may have been flipped.
+    (a, b) = minmax(a, b)
+
+    return Box3Df(min=a, max=b)
 end
 
 
@@ -71,8 +90,8 @@ end
 function gui_visualize(b::DebugGuiVisualsComponent_Rock, e::Entity, data::DebugGuiRenderData)
     voxel_pos::v3i = get_voxel_position(e)
     if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
-        gui_rect = world_to_gui(Box3Df(center=voxel_pos, size=one(v3f)),
-                                data)
+        world_rect = Box3Df(center=voxel_pos, size=one(v3f))
+        gui_rect = world_to_gui(world_rect, data)
         CImGui.ImDrawList_AddRectFilled(
             data.draw_list,
             min_inclusive(gui_rect).xy,
@@ -104,16 +123,18 @@ ECS.require_components(::Type{DebugGuiVisualsComponent_DrillPod}) = (
     OrientationComponent
 )
 
+draw_order(::DebugGuiVisualsComponent_DrillPod, ::Entity) = typemax(Int64)
+
 function gui_visualize(dp::DebugGuiVisualsComponent_DrillPod, e::Entity, data::DebugGuiRenderData)
     pos::v3f = get_cosmetic_pos(e)
     rot::fquat = get_cosmetic_rot(e)
-    forward::v3f = q_apply(rot, v3f(1, 0, 0))
+    forward::v3f = q_apply(rot, get_horz_vector(1))
+
+    # Scale the length of the forward vector for the GUI.
+    forward = map(sign, forward) * (abs(forward) ^ @f32(2)) * dp.arrow_length_scale
 
     gui_pos = world_to_gui(pos, data)
-    gui_forward = world_to_gui(forward, data)
-
-    # Scale the length of the forward-vector in the GUI.
-    gui_forward = map(sign, gui_forward) * (abs(gui_forward) ^ @f32(2)) * dp.arrow_length_scale
+    gui_forward = world_to_gui(forward, data, true)
 
     CImGui.ImDrawList_AddCircle(
         data.draw_list,

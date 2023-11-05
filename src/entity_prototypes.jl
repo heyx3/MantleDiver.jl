@@ -24,8 +24,7 @@ end
 
 "Gets whether the player is busy moving, drilling, etc. and cannot take new actions right now"
 function player_is_busy(player::Entity)::Bool
-    return has_component(player, CabMovementComponent) ||
-           has_component(player, CabDrillComponent)
+    return has_component(player, AbstractManeuverComponent)
 end
 
 function player_start_turning(player::Entity, target_heading::Union{fquat, v3f})
@@ -67,8 +66,8 @@ function player_start_drilling(player::Entity,
                 min=one(v3i),
                 size=vsize(grid)
             )
-            drilled_pos = get_voxel_position(player) + grid_vector(direction)
-            is_touching(grid_idx_range, drilled_pos) && isnothing(grid[drilled_pos])
+            drilled_pos = get_voxel_position(player) + grid_vector(direction, Int32)
+            is_touching(grid_idx_range, drilled_pos) && !isnothing(grid[drilled_pos])
         end,
         "Trying to do an illegal drill: ",
           "from ", get_voxel_position(player), " along direction ", direction

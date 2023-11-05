@@ -78,23 +78,32 @@ function julia_main()::Cint
             # Ensure there's at least one solid rock underneath the top layer,
             #    for the player to spawn on.
             if all(r -> (r==RockTypes.empty), @view rock_grid[:, :, top_rock_layer - 1])
-                fill_pos = rand(v3i(1, 1, 2) : vappend(vsize(rock_grid).xy,
-                                                       top_rock_layer - 1))
-                rock_grid[fill_pos...] = RockTypes.plain
+                fill_pos = rand(v2i(1, 1) : vsize(rock_grid).xy)
+                rock_grid[fill_pos..., top_rock_layer - 1] = RockTypes.plain
             end
             # Insert some pieces of gold.
             n_golds::Int = 5
             for _ in 1:n_golds
                 local pos::Vec3{Int}
+                counter::Int = 0
                 @do_while begin
                     pos = rand(1:vsize(rock_grid))
-                end rock_grid[pos] != RockTypes.plain
+                    counter += 1
+                end (counter < 999) && (rock_grid[pos] != RockTypes.plain)
+                if counter >= 1000
+                    display(rock_grid)
+                    error("Infinite loop! Grid printout is above.")
+                end
                 rock_grid[pos] = RockTypes.gold
             end
 
             # Set up the ECS world.
             ecs_world::World = World()
             entity_grid = make_grid(ecs_world, vsize(rock_grid))
+            component_grid = get_component(entity_grid, GridManagerComponent)
+            is_grid_free(pos::Vec3{<:Integer}) = any(pos < 1) ||
+                                                 any(pos > vsize(component_grid.entities)) ||
+                                                 isnothing(component_grid.entities[pos])
 
             # Turn the generated grid of data into real entities.
             for grid_pos in 1:vsize(rock_grid)
@@ -109,20 +118,21 @@ function julia_main()::Cint
                 ecs_world,
                 begin
                     local pos::v2i
-                    pos3D()::v3i = vappend(pos, top_rock_layer - 1)
+                    pos3D()::v3i = vappend(pos, top_rock_layer)
                     @do_while begin
                         pos = rand(1:get_horz(vsize(rock_grid)))
-                    end (rock_grid[pos3D()] == RockTypes.empty)
+                    end (rock_grid[pos3D() - v3i(0, 0, 1)] == RockTypes.empty)
                     pos3D()
                 end
             )
 
             # Initialize the GUI for turning and moving.
-            TURN_SPEED_DEG_PER_SECOND = 180
-            TURN_INCREMENT_DEG = 30
             next_move_flip::Int8 = 1
 
             elapsed_seconds::Float32 = @f32(0)
+
+            # Initialize the GUI debug world display.
+            sorted_gui_display_elements = Vector{Tuple{AbstractDebugGuiVisualsComponent, Entity, Int64}}()
 
             # Size each sub-window in terms of the overall window size.
             function size_window_proportionately(uv_space::Box2Df)
@@ -146,29 +156,54 @@ function julia_main()::Cint
             # Use GUI widgets to debug render two perpendicular slices of the game.
             size_window_proportionately(Box2Df(min=Vec(0.01, 0.01), max=Vec(0.49, 0.99)))
             gui_window("DebugWorldView", C_NULL, CImGui.ImGuiWindowFlags_NoDecoration) do
+                # Presort drawn elements by their priority.
+                empty!(sorted_gui_display_elements)
+                for (component, entity) in get_components(ecs_world, AbstractDebugGuiVisualsComponent)
+                    push!(sorted_gui_display_elements,
+                          (component, entity, draw_order(component, entity)))
+                end
+                sort!(sorted_gui_display_elements, by=(data->data[3]))
+
+                sub_wnd_pos = convert(v2i, CImGui.GetWindowPos())
+                sub_wnd_size = convert(v2i, CImGui.GetWindowSize())
+                sub_wnd_space = Box2Df(
+                    min=sub_wnd_pos,
+                    size=sub_wnd_size
+                )
+                println("\n\nWindow: ", sub_wnd_pos, " => ", sub_wnd_pos + sub_wnd_size - 1, "  | size: ", sub_wnd_size)
+                DRAW_BORDER = 10
+
                 # The UI Y axis corresponds to the world Z axis.
                 # The UI X axis will correspond to either the X or Y axis.
                 for ui_x_axis in (1, 2)
                     other_x_axis::Int = mod1(ui_x_axis + 1, 2)
 
                     # Compute data for drawing the rock grid along this slice.
-                    sub_wnd_pos = convert(v2i, CImGui.GetWindowPos())
-                    sub_wnd_size = convert(v2i, CImGui.GetWindowSize())
-                    DRAW_BORDER = 10
                     gui_space = Box2Df(
-                        min = sub_wnd_pos + DRAW_BORDER +
-                              v2i((sub_wnd_size.x * (ui_x_axis - 1)) ÷ 2,
-                                  0),
-                        size = (sub_wnd_size - (DRAW_BORDER * 2)) / v2f(2, 1)
+                        min = min_inclusive(sub_wnd_space) + DRAW_BORDER +
+                              if ui_x_axis == 1
+                                  v2f(0, 0)
+                              else
+                                  v2f(center(sub_wnd_space).x + DRAW_BORDER, 0)
+                              end,
+                        max = if ui_x_axis == 1
+                                  v2f(center(sub_wnd_space).x,
+                                      max_inclusive(sub_wnd_space).y)
+                              else
+                                  max_inclusive(sub_wnd_space)
+                              end - DRAW_BORDER
                     )
                     world_slice_space = Box2Df(
-                        min = let min3D = (one(v3f) - 0.5)
-                            Vec(min3D[ui_x_axis], min3D[3])
+                        min = let min3D = one(v3f)
+                            Vec(min3D[ui_x_axis], min3D[3]) - 0.5
                         end,
                         size = let size3D = vsize(rock_grid)
                             Vec(size3D[ui_x_axis], size3D[3])
                         end
                     )
+                    println("GUI.x = ", ui_x_axis,
+                            "\n\tWorld: ", world_slice_space,
+                            "\n\tGUI: ", gui_space)
                     gui_render_data = DebugGuiRenderData(
                         ui_x_axis,
                         get_voxel_position(entity_player)[other_x_axis],
@@ -176,8 +211,18 @@ function julia_main()::Cint
                         CImGui.GetWindowDrawList()
                     )
 
+                    # Draw the background.
+                    CImGui.ImDrawList_AddRectFilled(
+                        CImGui.GetWindowDrawList(),
+                        min_inclusive(gui_space),
+                        max_inclusive(gui_space),
+                        CImGui.ImVec4(0.7, 0.7, 0.7, 0.7),
+                        @f32(4),
+                        CImGui.LibCImGui.ImDrawFlags_None
+                    )
+
                     # Draw all elements.
-                    for (component, entity) in get_components(ecs_world, AbstractDebugGuiVisualsComponent)
+                    for (component, entity, _) in sorted_gui_display_elements
                         gui_visualize(component, entity, gui_render_data)
                     end
 
@@ -255,6 +300,20 @@ function julia_main()::Cint
                     #                           CImGui.ImVec4(1, 0.7, 0.7, 1),
                     #                           3)
                 end
+
+                CImGui.ImDrawList_AddLine(
+                    CImGui.GetWindowDrawList(),
+                    CImGui.ImVec2(
+                        sub_wnd_pos.x + (DRAW_BORDER * 2) + (sub_wnd_size.x ÷ 2),
+                        sub_wnd_pos.y + DRAW_BORDER
+                    ),
+                    CImGui.ImVec2(
+                        sub_wnd_pos.x + (DRAW_BORDER * 2) + (sub_wnd_size.x ÷ 2),
+                        sub_wnd_pos.y + sub_wnd_size.y - DRAW_BORDER
+                    ),
+                    CImGui.ImVec4(0.9, 0.9, 0.9, 1.0),
+                    3
+                )
             end
 
             # Provide some turn and movement controls.
@@ -311,7 +370,7 @@ function julia_main()::Cint
                 (MOVE_FORWARD, MOVE_CLIMB, MOVE_DROP) = LEGAL_MOVES
                 (forward_is_legal, climb_is_legal, drop_is_legal) =
                     is_legal.(LEGAL_MOVES, Ref(current_move_dir),
-                              Ref(player_rock_cell), Ref(rock_grid))
+                              Ref(get_voxel_position(entity_player)), Ref(is_grid_free))
                 if maneuver_button("x##Move"; force_disable=!forward_is_legal)
                     player_start_moving(entity_player, MOVE_FORWARD, current_move_dir)
                 end
@@ -348,13 +407,13 @@ function julia_main()::Cint
                 CImGui.SameLine()
                 if maneuver_button("V##Drill"; force_disable=!is_drill_legal(v3f(0, 0, -1)))
                 #begin
-                    player_start_drilling(entity_player, grid_dir(-get_up_axis()))
+                    player_start_drilling(entity_player, grid_dir(-get_up_vector()))
                 end
                 CImGui.SameLine()
-                if maneuver_button(">>##Drill6"; force_disable=!is_drill_legal(v3f(0, 1, 0)))
+                if maneuver_button(">>##Drill6"; force_disable=!is_drill_legal(v3i(0, next_move_flip, 0)))
                 #begin
-                    side_axis = mod1(grid_axis(current_move_dir) + 1, 2)
-                    side_sign = grid_sign(current_move_dir) * next_move_flip
+                    side_axis = mod1(grid_axis(current_grid_direction) + 1, 2)
+                    side_sign = grid_sign(current_grid_direction) * next_move_flip
                     player_start_drilling(entity_player, grid_dir(side_axis, side_sign))
                 end
             end end # Window and padding

@@ -29,7 +29,7 @@ function grid_dir(rot::fquat)::GridDirection
     return grid_dir(q_apply(rot, v3f(1, 0, 0)))
 end
 function grid_dir(forward::Vec3)::GridDirection
-    axis = findmax(forward)[2]
+    axis = findmax(abs(forward))[2]
     dir = Int8(sign(forward[axis]))
     return grid_dir(axis, dir)
 end

@@ -1,3 +1,7 @@
+const TURN_SPEED_DEG_PER_SECOND = 180
+const TURN_INCREMENT_DEG = 30
+
+
 ##   Maneuvers   ##
 
 abstract type AbstractManeuverComponent <: AbstractComponent end
@@ -39,7 +43,7 @@ function ECS.create_component(::Type{CabTurnComponent}, entity::Entity,
     @bp_check(!has_component(entity, AbstractManeuverComponent),
               "Entity is already in the middle of a maneuver")
     return CabTurnComponent(
-        add_component(entity, CosmeticOffsetComponent),
+        add_component(CosmeticOffsetComponent, entity),
         target
     )
 end
