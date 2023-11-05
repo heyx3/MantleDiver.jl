@@ -265,7 +265,7 @@ function julia_main()::Cint
                     CImGui.Dummy(BUTTON_SIZE[1] * 1.0, 1)
                     CImGui.SameLine()
                     if maneuver_button("-->", BUTTON_SIZE)
-                        turn = fquat(get_up_vector(), -deg2rad(TURN_INCREMENT_DEG))
+                        turn = fquat(get_up_vector(), deg2rad(TURN_INCREMENT_DEG))
                         new_orientation = get_orientation(entity_player) >> turn
                         player_start_turning(entity_player, new_orientation)
                     end

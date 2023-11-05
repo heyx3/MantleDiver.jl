@@ -172,7 +172,7 @@ end
 
 ##   Drilling   ##
 
-mutable struct CabDrillComponent <: AbstractComponent
+mutable struct CabDrillComponent <: AbstractManeuverComponent
     cosmetic_shake::CosmeticOffsetComponent
     original_pos::v3f
 
