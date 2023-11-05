@@ -4,7 +4,10 @@ Gets whether an entity can hold more than one of the given type of component.
 If your components inherit from another abstract component type,
     it's illegal for the abstract type to return a different value than the concrete child types.
 "
-allow_multiple(::Type{<:AbstractComponent})::Bool = true
+allow_multiple(::Type{<:AbstractComponent})::Bool = true #TODO: Default to false, it's more common
+#TODO: Generalize to a blacklist of sibling component types
+
+#TODO: Allow support singleton components, 1 per world
 
 "
 Gets the types of components required by the given component.

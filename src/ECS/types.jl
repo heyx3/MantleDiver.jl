@@ -25,6 +25,7 @@ mutable struct World
     # For each Entity, for each Component type, lists all instances.
     component_lookup::Dict{_Entity{World},
                            Dict{Type{<:AbstractComponent},
+                                #TODO: I think it's probably more efficient for each set to hold the specific componen type
                                 Set{AbstractComponent}}}
     # For each component type, lists all entities with that component.
     entity_lookup::Dict{Type{<:AbstractComponent},
