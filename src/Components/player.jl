@@ -187,7 +187,7 @@ function ECS.create_component(::Type{CabDrillComponent}, entity::Entity,
     @bp_check(!has_component(entity, AbstractManeuverComponent),
               "Entity is already in the middle of a maneuver")
     return CabDrillComponent(
-        add_component(entity, CosmeticOffsetComponent),
+        add_component(CosmeticOffsetComponent, entity),
         get_precise_position(entity),
         dir,
         rng_seed,
@@ -203,13 +203,25 @@ function ECS.destroy_component(cab_drill::CabDrillComponent,
 end
 
 function ECS.tick_component(cab_drill::CabDrillComponent, entity::Entity,
+                            # Internal fields for recursive calls:
                             delta_seconds::Float32 = entity.world.delta_seconds,
                             pos_component::ContinuousPosition = get_component(entity, ContinuousPosition))
     # Move forward in time.
     cab_drill.t += delta_seconds / DRILL_DURATION_SECONDS
     cab_drill.t = min(1, cab_drill.t)
+
+    # If the animation is finished, execute the drill action.
     if cab_drill.t >= 1
         remove_component(cab_drill, entity)
+
+        grid = get_component(entity.world, GridManagerComponent)[1]
+        rock = grid.entities[get_voxel_position(pos_component)]
+        if isnothing(rock)
+            @warn "Drilled into an empty spot! Something else destroyed it first?"
+        else
+            remove_entity(entity.world, rock)
+        end
+
         return nothing
     end
 
@@ -223,7 +235,7 @@ function ECS.tick_component(cab_drill::CabDrillComponent, entity::Entity,
                         end
 
     # Update shaking.
-    shake_window = @f32(sin(cds.t * π) ^ 0.15) # Shake strength should fade in and out
+    shake_window = @f32(sin(cab_drill.t * π) ^ 0.15) # Shake strength should fade in and out
     # Shake strength will be randomly distributed among the different shake types.
     # I'm not sure how to perfectly distribute continuous numbers,
     #    but distributing discrete elements is easy.

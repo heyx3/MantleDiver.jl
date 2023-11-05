@@ -170,7 +170,6 @@ function julia_main()::Cint
                     min=sub_wnd_pos,
                     size=sub_wnd_size
                 )
-                println("\n\nWindow: ", sub_wnd_pos, " => ", sub_wnd_pos + sub_wnd_size - 1, "  | size: ", sub_wnd_size)
                 DRAW_BORDER = 10
 
                 # The UI Y axis corresponds to the world Z axis.
@@ -201,9 +200,6 @@ function julia_main()::Cint
                             Vec(size3D[ui_x_axis], size3D[3])
                         end
                     )
-                    println("GUI.x = ", ui_x_axis,
-                            "\n\tWorld: ", world_slice_space,
-                            "\n\tGUI: ", gui_space)
                     gui_render_data = DebugGuiRenderData(
                         ui_x_axis,
                         get_voxel_position(entity_player)[other_x_axis],
