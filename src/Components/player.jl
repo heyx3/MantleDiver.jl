@@ -100,7 +100,7 @@ function ECS.create_component(::Type{CabMovementComponent}, entity::Entity,
     @bp_check(!has_component(entity, AbstractManeuverComponent),
               "Entity is already in the middle of a maneuver")
     return CabMovementComponent(
-        add_component(entity, CosmeticOffsetComponent),
+        add_component(CosmeticOffsetComponent, entity),
         get_precise_position(entity),
         zero(Float32),
         one(Int),
@@ -215,7 +215,8 @@ function ECS.tick_component(cab_drill::CabDrillComponent, entity::Entity,
         remove_component(cab_drill, entity)
 
         grid = get_component(entity.world, GridManagerComponent)[1]
-        rock = grid.entities[get_voxel_position(pos_component)]
+        voxel = get_voxel_position(pos_component)
+        rock = grid.entities[voxel]
         if isnothing(rock)
             @warn "Drilled into an empty spot! Something else destroyed it first?"
         else

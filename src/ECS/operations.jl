@@ -158,6 +158,9 @@ function remove_component(c::AbstractComponent, e::Entity
         end
     end
 
+    # Let it know about the destruction.
+    destroy_component(c, e, entity_is_dying)
+
     return nothing
 end
 

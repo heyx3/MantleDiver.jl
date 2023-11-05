@@ -44,7 +44,7 @@ function ECS.destroy_component(el::GridElementComponent, entity::Entity, is_dyin
 
     # Unregister this rock with the grid.
     # Watch out for the case where the grid itself is dying (i.e. the world is ending).
-    grid_data = get_component(e.world, GridManagerComponent)
+    grid_data = get_component(entity.world, GridManagerComponent)
     if exists(grid_data)
         (grid, grid_entity) = grid_data
         @bp_check(grid.entities[pos] == entity,
