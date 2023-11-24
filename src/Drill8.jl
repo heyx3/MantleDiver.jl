@@ -11,6 +11,8 @@ Bplus.Math.get_right_handed() = false
 
 const PI2 = Float32(2π)
 
+@make_toggleable_asserts d8_
+
 
 "
 Prints the current file and line, along with any data you pass in.
@@ -26,9 +28,6 @@ macro shout(data...)
     end
 end
 
-include("ECS/ECS.jl")
-using .ECS
-
 
 @bp_enum(RockTypes::UInt8,
     empty = 0,
@@ -36,6 +35,7 @@ using .ECS
     gold = 2
 )
 grid_pos(world_pos::Vec3)::v3i = round(Int32, world_pos)
+
 include("grid_directions.jl")
 include("cab.jl")
 
@@ -100,7 +100,7 @@ function julia_main()::Cint
             # Set up the ECS world.
             ecs_world::World = World()
             entity_grid = make_grid(ecs_world, vsize(rock_grid))
-            component_grid = get_component(entity_grid, GridManagerComponent)
+            component_grid = get_component(entity_grid, GridManager)
             is_grid_free(pos::Vec3{<:Integer}) = any(pos < 1) ||
                                                  any(pos > vsize(component_grid.entities)) ||
                                                  isnothing(component_grid.entities[pos])
@@ -127,12 +127,12 @@ function julia_main()::Cint
             )
 
             # Initialize the GUI for turning and moving.
+            TURN_INCREMENT_DEG = @f32(30)
             next_move_flip::Int8 = 1
-
             elapsed_seconds::Float32 = @f32(0)
 
             # Initialize the GUI debug world display.
-            sorted_gui_display_elements = Vector{Tuple{AbstractDebugGuiVisualsComponent, Entity, Int64}}()
+            sorted_gui_display_elements = Vector{Tuple{DebugGuiVisuals, Entity, Int64}}()
 
             # Size each sub-window in terms of the overall window size.
             function size_window_proportionately(uv_space::Box2Df)
@@ -158,9 +158,9 @@ function julia_main()::Cint
             gui_window("DebugWorldView", C_NULL, CImGui.ImGuiWindowFlags_NoDecoration) do
                 # Presort drawn elements by their priority.
                 empty!(sorted_gui_display_elements)
-                for (component, entity) in get_components(ecs_world, AbstractDebugGuiVisualsComponent)
+                for (component, entity) in get_components(ecs_world, DebugGuiVisuals)
                     push!(sorted_gui_display_elements,
-                          (component, entity, draw_order(component, entity)))
+                          (component, entity, component.draw_order()))
                 end
                 sort!(sorted_gui_display_elements, by=(data->data[3]))
 
@@ -219,7 +219,7 @@ function julia_main()::Cint
 
                     # Draw all elements.
                     for (component, entity, _) in sorted_gui_display_elements
-                        gui_visualize(component, entity, gui_render_data)
+                        component.visualize(gui_render_data)
                     end
                 end
 
@@ -318,7 +318,7 @@ function julia_main()::Cint
                     drilled_pos = get_precise_position(entity_player) + world_dir
                     drilled_grid_pos = grid_pos(drilled_pos)
                     return is_touching(Box3Di(min=one(v3i), size=vsize(rock_grid)), drilled_grid_pos) &&
-                           (rock_grid[drilled_grid_pos] != RockTypes.empty)
+                           !is_grid_free(drilled_grid_pos)
                 end
                 CImGui.Text("DRILL"); CImGui.SameLine()
                 CImGui.Dummy(10, 0); CImGui.SameLine()
@@ -332,11 +332,10 @@ function julia_main()::Cint
                     player_start_drilling(entity_player, grid_dir(-get_up_vector()))
                 end
                 CImGui.SameLine()
-                if maneuver_button(">>##Drill6"; force_disable=!is_drill_legal(v3i(0, next_move_flip, 0)))
+                if maneuver_button(">>##Drill6"; force_disable=!is_drill_legal(v3i(0, 1, 0)))
                 #begin
-                    side_axis = mod1(grid_axis(current_grid_direction) + 1, 2)
-                    side_sign = grid_sign(current_grid_direction) * next_move_flip
-                    player_start_drilling(entity_player, grid_dir(side_axis, side_sign))
+                    drill_dir = grid_dir(rotate_cab_movement(v3i(0, 1, 0), current_move_dir))
+                    player_start_drilling(entity_player, drill_dir)
                 end
             end end # Window and padding
         end

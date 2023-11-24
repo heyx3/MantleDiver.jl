@@ -1,254 +1,227 @@
-const TURN_SPEED_DEG_PER_SECOND = 180
-const TURN_INCREMENT_DEG = 30
+##   Abstract component   ##
 
+# "Some kind of animated motion. Only one maneuver can run at a time."
+@component Maneuver {abstract} {entitySingleton} {require: ContinuousPosition} begin
+    pos_component::ContinuousPosition
+    shake_component::CosmeticOffset
 
-##   Maneuvers   ##
+    duration::Float32
+    progress_normalized::Float32
 
-abstract type AbstractManeuverComponent <: AbstractComponent end
-ECS.require_components(::Type{<:AbstractManeuverComponent}) = (ContinuousPosition, )
-ECS.allow_multiple(::Type{<:AbstractManeuverComponent}) = false
-
-"Sets a cosmetic position/rotation offset based on cab shaking effects"
-function calculate_shake(elapsed_seconds::Float32,
-                         shake_strengths::Vec{NShakeModes, Float32},
-                         output::CosmeticOffsetComponent)
-    cab_shake_states = Vec{NShakeModes, CabShakeState}(
-        i -> CAB_SHAKE_MODES[i](elapsed_seconds)
-    )
-    output.pos = sum(
-        state.pos * strength
-        for (state, strength) in zip(cab_shake_states, shake_strengths)
-    )
-    output.rot = let rot = fquat()
-        for (state, strength) in zip(cab_shake_states, shake_strengths)
-            rot >>= fquat(get_up_vector(), state.yaw * strength)
-            rot >>= fquat(get_horz_vector(2), state.pitch * strength)
-            rot >>= fquat(get_horz_vector(1), state.roll * strength)
+    function CONSTRUCT(duration_seconds)
+        this.progress_normalized = 0
+        this.duration = convert(Float32, duration_seconds)
+        this.pos_component = get_component(entity, ContinuousPosition)
+        this.shake_component = add_component(entity, CosmeticOffset)
+    end
+    function DESTRUCT(is_entity_dying::Bool)
+        if !is_entity_dying
+            remove_component(entity, this.shake_component)
         end
-        rot
+    end
+
+    @promise finish_maneuver()
+    @configurable shake_strengths()::Vec{NShakeModes, Float32} = zero(Vec{NShakeModes, Float32})
+
+    function TICK()
+        this.progress_normalized += world.delta_seconds / this.duration
+
+        # Calculate shaking.
+        shake_strengths = this.shake_strengths()
+        shake_states = Vec{NShakeModes, CabShakeState}(
+            i -> CAB_SHAKE_MODES[i](world.elapsed_seconds)
+        )
+        # Apply shaking to the entity.
+        this.shake_component.pos = sum(
+            state.pos * strength
+              for (state, strength) in zip(shake_states, shake_strengths)
+        )
+        this.shake_component.rot = let rot = fquat()
+            for (state, strength) in zip(shake_states, shake_strengths)
+                rot >>= fquat(get_up_vector(), state.yaw * strength)
+                rot >>= fquat(get_horz_vector(2), state.pitch * strength)
+                rot >>= fquat(get_horz_vector(1), state.roll * strength)
+            end
+            rot
+        end
+    end
+    function FINISH_TICK()
+        if this.progress_normalized >= 1
+            this.finish_maneuver()
+            remove_component(entity, this)
+        end
     end
 end
 
 
 ##   Turning   ##
 
-"Manages a cab's turning motion. Pass `target` when creating it."
-mutable struct CabTurnComponent <: AbstractManeuverComponent
-    cosmetic_shake::CosmeticOffsetComponent
+const TURN_SPEED_DEG_PER_SECOND = 180
+
+# "Manages a cab's turning motion"
+@component CabTurn <: Maneuver {require: WorldOrientation} begin
+    rot_component::WorldOrientation
     target::fquat
-end
 
-function ECS.create_component(::Type{CabTurnComponent}, entity::Entity,
-                              target::fquat)
-    @bp_check(!has_component(entity, AbstractManeuverComponent),
-              "Entity is already in the middle of a maneuver")
-    return CabTurnComponent(
-        add_component(CosmeticOffsetComponent, entity),
-        target
-    )
-end
-function ECS.destroy_component(cab_turn::CabTurnComponent,
-                               entity::Entity,
-                               is_dying::Bool)
-    if !is_dying
-        remove_component(cab_turn.cosmetic_shake, entity)
-    end
-end
+    CONSTRUCT(target) = begin
+        this.rot_component = get_component(entity, WorldOrientation)
+        this.target = convert(fquat, target)
 
-function ECS.tick_component(cab_turn::CabTurnComponent,
-                            entity::Entity,
-                            rot_component::OrientationComponent = get_component(entity, OrientationComponent))
-    # Calculate the full turn needed to make it to the target.
-    forward::v3f = q_apply(rot_component.rot, get_horz_vector(1))
-    desired_forward::v3f = q_apply(cab_turn.target, get_horz_vector(1))
-    full_turn = fquat(forward, desired_forward)
-    (turn_axis, turn_radians) = q_axisangle(full_turn)
-
-    # Constrain the turn based on the size of the time-step.
-    delta_seconds::Float32 = entity.world.delta_seconds
-    frame_max_rad = deg2rad(delta_seconds * TURN_SPEED_DEG_PER_SECOND)
-    is_finishing_turn::Bool = (frame_max_rad >= abs(turn_radians))
-
-    # Apply the turn movement.
-    if is_finishing_turn
-        rot_component.rot = cab_turn.target
-        remove_component(cab_turn, entity)
-    else
-        rot_component.rot >>= fquat(turn_axis, copysign(frame_max_rad, turn_radians))
+        #TODO: B+ function to calculate the angle delta between two orientations
+        total_angle = acos(vdot(q_apply(this.rot_component.rot,
+                                        v3f(1, 0, 0)),
+                                q_apply(this.target,
+                                        v3f(1, 0, 0))))
+        SUPER(rad2deg(total_angle) / TURN_SPEED_DEG_PER_SECOND)
     end
 
-    return nothing
+    TICK() = begin
+        # Calculate the full turn needed to make it to the target.
+        forward::v3f = q_apply(this.rot_component.rot, get_horz_vector(1))
+        desired_forward::v3f = q_apply(this.target, get_horz_vector(1))
+        full_turn = fquat(forward, desired_forward)
+        (turn_axis, turn_radians) = q_axisangle(full_turn)
+
+        # Constrain the turn based on the size of the time-step.
+        delta_seconds::Float32 = entity.world.delta_seconds
+        frame_max_rad = deg2rad(delta_seconds * TURN_SPEED_DEG_PER_SECOND)
+
+        # Apply the turn movement.
+        this.rot_component.rot >>= fquat(turn_axis, copysign(frame_max_rad, turn_radians))
+    end
+    finish_maneuver() = (this.rot_component.rot = this.target)
 end
 
 
 ##   Movement   ##
 
-"Manages a Cab movement. Pass `src` and `heading` when creating it."
-mutable struct CabMovementComponent <: AbstractManeuverComponent
-    cosmetic_shake::CosmeticOffsetComponent
+# "Plays out a Cab movement animation"
+@component CabMovement <: Maneuver begin
     original_pos::v3f
-
-    t::Float32
     key_idx::Int
-
-    src::CabMovement
+    computed_shake_strengths::Vec{NShakeModes, Float32}
+    src::CabMovementData
     heading::CabMovementDir
-end
 
-function ECS.create_component(::Type{CabMovementComponent}, entity::Entity,
-                              src::CabMovement, heading::CabMovementDir)
-    @bp_check(!has_component(entity, AbstractManeuverComponent),
-              "Entity is already in the middle of a maneuver")
-    return CabMovementComponent(
-        add_component(CosmeticOffsetComponent, entity),
-        get_precise_position(entity),
-        zero(Float32),
-        one(Int),
-        src, heading
-    )
-end
-function ECS.destroy_component(cab_movement::CabMovementComponent,
-                               entity::Entity,
-                               is_dying::Bool)
-    if !is_dying
-        remove_component(cab_movement.cosmetic_shake, entity)
+    function CONSTRUCT(src::CabMovementData, heading::CabMovementDir)
+        SUPER(src.time_seconds)
+        this.original_pos = this.pos_component.pos
+        this.key_idx = 1
+        this.src = src
+        this.heading = heading
+        this.computed_shake_strengths = zero(Vec{NShakeModes, Float32})
     end
+
+    function TICK()
+        cab_move_forward(this, entity, world, world.delta_seconds)
+    end
+    finish_maneuver() = begin
+        this.pos_component.pos = +(
+            this.original_pos,
+            rotate_cab_movement(this.src.keyframes[end].delta_pos,
+                                this.heading)
+        )
+    end
+
+    shake_strengths() = this.computed_shake_strengths
 end
 
-function ECS.tick_component(cab_movement::CabMovementComponent, entity::Entity,
-                            delta_seconds::Float32 = entity.world.delta_seconds,
-                            pos_component::ContinuousPosition = get_component(entity, ContinuousPosition))
+function cab_move_forward(this::CabMovement, entity::Entity, world::World,
+                          delta_seconds::Float32)
     # Get the previous animation key, or a stand-in if we're at the first key.
     local prev_key::CabMovementKeyframe
-    if cab_movement.key_idx == 1
+    if this.key_idx == 1
         prev_key = CabMovementKeyframe(zero(v3f), zero(Float32),
                                        zero(Vec{NShakeModes, Float32}))
     else
-        prev_key = cab_movement.src.keyframes[cab_movement.key_idx - 1]
+        prev_key = this.src.keyframes[this.key_idx - 1]
     end
 
-    next_key = cab_movement.src.keyframes[cab_movement.key_idx]
+    next_key = this.src.keyframes[this.key_idx]
 
-    # Apply the heading to the keyframes.
-    @set! prev_key.delta_pos = rotate_cab_movement(prev_key.delta_pos, cab_movement.heading)
-    @set! next_key.delta_pos = rotate_cab_movement(next_key.delta_pos, cab_movement.heading)
+    # Rotate the keyframes to face our actual heading.
+    @set! prev_key.delta_pos = rotate_cab_movement(prev_key.delta_pos, this.heading)
+    @set! next_key.delta_pos = rotate_cab_movement(next_key.delta_pos, this.heading)
 
-    # If this frame would go past the current keyframe, cut it off at that keyframe
+    # If this tick would go past the current keyframe, cut it off at that keyframe
     #    and make a recursive call to process the next one.
-    time_to_next_keyframe = (next_key.t - cab_movement.t) * cab_movement.src.time_seconds
+    time_to_next_keyframe = (next_key.t - this.progress_normalized) * this.duration
     passes_keyframe::Bool = time_to_next_keyframe <= delta_seconds
     capped_delta_seconds = passes_keyframe ? time_to_next_keyframe : delta_seconds
 
-    cab_movement.t += capped_delta_seconds / cab_movement.src.time_seconds
-
     # Update the position, or move on to the next keyframe if time is left.
     if passes_keyframe
-        # If there are no keyframes left, the animation is finished.
-        if cab_movement.key_idx == length(cab_movement.src.keyframes)
-            pos_component.pos = cab_movement.original_pos + next_key.delta_pos
-            remove_component(cab_movement, entity)
+        if this.key_idx < length(this.src.keyframes)
+            this.key_idx += 1
+            cab_move_forward(this, entity, world, delta_seconds - time_to_next_keyframe)
         else
-            cab_movement.key_idx += 1
-            tick_component(cab_movement, entity,
-                           delta_seconds - time_to_next_keyframe,
-                           pos_component)
+            # Already handled by this.finish_maneuver()
         end
     else
-        frame_t::Float32 = inv_lerp(prev_key.t, next_key.t, cab_movement.t)
-        pos_component.pos = cab_movement.original_pos +
-                            lerp(prev_key.delta_pos, next_key.delta_pos, frame_t)
-        shake_strengths = lerp(prev_key.shake_strengths,
-                               next_key.shake_strengths,
-                               frame_t)
-
-        calculate_shake(entity.world.elapsed_seconds,
-                        shake_strengths,
-                        cab_movement.cosmetic_shake)
+        frame_t::Float32 = inv_lerp(prev_key.t, next_key.t, this.progress_normalized)
+        this.pos_component.pos = this.original_pos +
+                                 lerp(prev_key.delta_pos, next_key.delta_pos, frame_t)
+        this.computed_shake_strengths = lerp(
+            prev_key.shake_strengths,
+            next_key.shake_strengths,
+            frame_t
+        )
     end
-
-    return nothing
 end
 
 
 ##   Drilling   ##
 
-mutable struct CabDrillComponent <: AbstractManeuverComponent
-    cosmetic_shake::CosmeticOffsetComponent
+@component CabDrill <: Maneuver begin
     original_pos::v3f
 
     dir::GridDirection
     rng_seed::Float32
 
-    t::Float32
-end
-
-function ECS.create_component(::Type{CabDrillComponent}, entity::Entity,
-                              dir::GridDirection, rng_seed::Float32)
-    @bp_check(!has_component(entity, AbstractManeuverComponent),
-              "Entity is already in the middle of a maneuver")
-    return CabDrillComponent(
-        add_component(CosmeticOffsetComponent, entity),
-        get_precise_position(entity),
-        dir,
-        rng_seed,
-        zero(Float32)
-    )
-end
-function ECS.destroy_component(cab_drill::CabDrillComponent,
-                               entity::Entity,
-                               is_dying::Bool)
-    if !is_dying
-        remove_component(cab_drill.cosmetic_shake, entity)
+    function CONSTRUCT(dir::GridDirection, rng_seed::Float32)
+        SUPER(DRILL_DURATION_SECONDS)
+        this.original_pos = this.pos_component.pos
+        this.dir = dir
+        this.rng_seed = rng_seed
     end
-end
 
-function ECS.tick_component(cab_drill::CabDrillComponent, entity::Entity,
-                            # Internal fields for recursive calls:
-                            delta_seconds::Float32 = entity.world.delta_seconds,
-                            pos_component::ContinuousPosition = get_component(entity, ContinuousPosition))
-    # Move forward in time.
-    cab_drill.t += delta_seconds / DRILL_DURATION_SECONDS
-    cab_drill.t = min(1, cab_drill.t)
+    function TICK()
+        movement = zero(v3f)
+        @set! movement[grid_axis(this.dir)] = this.progress_normalized *
+                                              grid_sign(this.dir)
 
-    # If the animation is finished, execute the drill action.
-    if cab_drill.t >= 1
-        remove_component(cab_drill, entity)
+        this.pos_component.pos = this.original_pos + movement
+    end
+    function finish_maneuver()
+        delta = zero(v3f)
+        @set! delta[grid_axis(this.dir)] = grid_sign(this.dir)
+        this.pos_component.pos = this.original_pos + delta
 
-        grid = get_component(entity.world, GridManagerComponent)[1]
-        voxel = get_voxel_position(pos_component)
+        grid = get_component(world, GridManager)[1]
+        voxel = this.pos_component.get_voxel_position()
         rock = grid.entities[voxel]
         if isnothing(rock)
             @warn "Drilled into an empty spot! Something else destroyed it first?"
         else
-            remove_entity(entity.world, rock)
+            remove_entity(world, rock)
+        end
+    end
+
+    function shake_strengths()
+        # Shake strength should fade in and out.
+        shake_window = @f32(saturate(sin(this.progress_normalized * π)) ^ 0.15)
+
+        # Shake strength will be randomly distributed among the different shake types.
+        # I'm not sure how to perfectly distribute continuous numbers,
+        #    but distributing discrete elements is easy.
+        shake_strengths = zero(Vec{NShakeModes, Float32})
+        N_SEGMENTS = 10
+        rng = ConstPRNG(this.rng_seed)
+        for i in 1:N_SEGMENTS
+            (bucket, rng) = rand(rng, 1:NShakeModes)
+            @set! shake_strengths[bucket] += @f32(1 / N_SEGMENTS)
         end
 
-        return nothing
+        return shake_strengths * shake_window
     end
-
-    # Move forward in space.
-    pos_component.pos = cab_drill.original_pos +
-                        let movement = zero(v3f)
-                            axis = grid_axis(cab_drill.dir)
-                            sign = grid_sign(cab_drill.dir)
-                            @set! movement[axis] = cab_drill.t * sign
-                            movement
-                        end
-
-    # Update shaking.
-    shake_window = @f32(sin(cab_drill.t * π) ^ 0.15) # Shake strength should fade in and out
-    # Shake strength will be randomly distributed among the different shake types.
-    # I'm not sure how to perfectly distribute continuous numbers,
-    #    but distributing discrete elements is easy.
-    shake_strengths = zero(Vec{NShakeModes, Float32})
-    N_SEGMENTS = 10
-    rng = ConstPRNG(cab_drill.rng_seed)
-    for i in 1:N_SEGMENTS
-        (bucket, rng) = rand(rng, 1:NShakeModes)
-        @set! shake_strengths[bucket] += @f32(1 / N_SEGMENTS)
-    end
-    shake_strengths *= shake_window
-    calculate_shake(entity.world.elapsed_seconds, shake_strengths, cab_drill.cosmetic_shake)
-
-    return nothing
 end

@@ -1,75 +1,58 @@
-##   Position   ##
+##   WorldPosition   ##
 
+#=
 "
 Something that exists in space, either discretely in the rock voxel grid or continuously.
 
 If a specific subtype is not specified, the entity's position will be discrete by default.
 "
-abstract type AbstractVoxelPositionComponent <: AbstractComponent end
-ECS.allow_multiple(::Type{<:AbstractVoxelPositionComponent}) = false
-ECS.create_component(::Type{AbstractVoxelPositionComponent}, e::Entity) = DiscreteVoxelPosition()
-
-get_voxel_position(c::AbstractVoxelPositionComponent)::v3i = error(
-    "get_voxel_position(::",
-    typeof(c),
-    ") not implemented"
-)
-get_precise_position(c::AbstractVoxelPositionComponent)::v3f = error(
-    "get_precise_position(::",
-    typeof(c),
-    ") not implemented"
-)
-
-get_voxel_position(e::Entity)::v3i = get_voxel_position(get_component(e, AbstractVoxelPositionComponent))
-get_precise_position(e::Entity)::v3f = get_precise_position(get_component(e, AbstractVoxelPositionComponent))
+=#
+@component WorldPosition {abstract} {entitySingleton}  begin
+    @promise get_voxel_position()::v3i
+    @promise get_precise_position()::v3f
+end
+get_voxel_position(e::Entity)::v3i = get_component(e, WorldPosition).get_voxel_position()
+get_precise_position(e::Entity)::v3f = get_component(e, WorldPosition).get_precise_position()
 
 
-# Discrete Position #
-
-"Positioned in terms of an element of the rock voxel grid."
-mutable struct DiscreteVoxelPosition <: AbstractVoxelPositionComponent
+@component DiscretePosition <: WorldPosition begin
     pos::v3i
-    DiscreteVoxelPosition(pos = zero(v3i)) = new(pos)
+
+    get_voxel_position() = this.pos
+    get_precise_position() = convert(v3f, this.pos)
 end
-get_voxel_position(d::DiscreteVoxelPosition) = d.pos
-get_precise_position(d::DiscreteVoxelPosition) = convert(v3f, d.pos)
-
-
-# Continuous Position #
-
-"
-A position somewhere within the rock voxel grid.
-The center of each voxel is at an integer coordinate.
-"
-mutable struct ContinuousPosition <: AbstractVoxelPositionComponent
+@component ContinuousPosition <: WorldPosition begin
     pos::v3f
-    ContinuousPosition(pos = zero(v3f)) = new(pos)
-end
-get_voxel_position(c::ContinuousPosition) = grid_pos(c.pos)
-get_precise_position(c::ContinuousPosition) = c.pos
 
-
-##   Orientation   ##
-
-@kwdef mutable struct OrientationComponent <: AbstractComponent
-    rot::fquat = fquat()
+    get_voxel_position() = grid_pos(this.pos)
+    get_precise_position() = this.pos
 end
 
-get_orientation(e::Entity) = get_component(e, OrientationComponent).rot
+
+##   WorldOrientation   ##
+
+@component WorldOrientation {entitySingleton} begin
+    rot::fquat
+    CONSTRUCT(rot = fquat()) = (this.rot = convert(fquat, rot))
+end
+get_orientation(e::Entity) = get_component(e, WorldOrientation).rot
 
 
 ##   Cosmetic Transform   ##
 
 "Represents a temporary visual offset to position/orientation, in local space"
-@kwdef mutable struct CosmeticOffsetComponent <: AbstractComponent
-    pos::v3f = zero(v3f)
-    rot::fquat = fquat()
+@component CosmeticOffset begin
+    pos::v3f
+    rot::fquat
+    CONSTRUCT(pos = zero(v3f), rot = fquat()) = begin
+        this.pos = convert(v3f, pos)
+        this.rot = convert(fquat, rot)
+    end
 end
-
 "Gets the cosmetic position of an entity, handling the case where the entity doesn't have a cosmetic offset"
 function get_cosmetic_pos(e::Entity)
     pos = get_precise_position(e)
-    for cosmetic::CosmeticOffsetComponent in get_components(e, CosmeticOffsetComponent)
+    for cosmetic::CosmeticOffset in get_components(e, CosmeticOffset)
         pos += cosmetic.pos
     end
     return pos
@@ -78,7 +61,7 @@ end
 "Gets the cosmetic rotation of an entity, handling the case where the entity doesn't have a cosmetic offset"
 function get_cosmetic_rot(e::Entity)
     rot::fquat = get_orientation(e)
-    for cosmetic::CosmeticOffsetComponent in get_components(e, CosmeticOffsetComponent)
+    for cosmetic::CosmeticOffset in get_components(e, CosmeticOffset)
         rot <<= cosmetic.rot
     end
     return rot
@@ -89,11 +72,11 @@ end
 
 "Gets the 4x4 world transform matrix for an entity that has position and orientation components"
 get_world_transform(e::Entity) = get_world_transform(
-    get_component(e, AbstractVoxelPositionComponent),
-    get_component(e, OrientationComponent)
+    get_component(e, WorldPosition),
+    get_component(e, WorldOrientation)
 )
-get_world_transform(p::AbstractVoxelPositionComponent,
-                    o::OrientationComponent,
+get_world_transform(p::WorldPosition,
+                    o::WorldOrientation,
                     scale::v3f = one(v3f)) = m4_world(
     get_precise_position(p),
     o.rot,

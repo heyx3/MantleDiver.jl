@@ -1,21 +1,10 @@
-"Something that can be visualized within the Dear ImGUI debug visualization of the world"
-abstract type AbstractDebugGuiVisualsComponent <: AbstractComponent end
-
-# By default, GUI drawer components require some kind of position data.
-ECS.require_components(::Type{<:AbstractDebugGuiVisualsComponent}) = (AbstractVoxelPositionComponent, )
-
-"Lower values should be drawn first"
-draw_order(v::AbstractDebugGuiVisualsComponent, e::Entity)::Int64 = let p = get_voxel_position(e)
-    p.x + (1000 * p.y) + (1000000 * p.z)
-end
-
 
 ##   DebugGuiRenderData   ##
 
 struct DebugGuiRenderData
     horizontal_axis::Int
     other_horizontal_axis::Int
-    horizontal_depth::Int # Position along the other horizontal axis
+    horizontal_depth::Int # WorldPosition along the other horizontal axis
 
     gui_range::Box2Df
     world_voxel_range::Box2Df # For the chosen horizontal axis, plus vertical axis
@@ -73,82 +62,80 @@ function world_to_gui(b::Box3D, data::DebugGuiRenderData)::Box3Df
 end
 
 
-##   Interface   ##
+##   Abstract component   ##
 
-"Visualizes a specific element, as part of a 2D slice of the world, in a Dear ImGUI canvas"
-function gui_visualize(c::AbstractDebugGuiVisualsComponent, e::Entity, data::DebugGuiRenderData)
-    error("gui_visualize(::", typeof(c), ", ...) not implemented")
+# "Something that can be visualized within the Dear ImGUI debug visualization of the world"
+@component DebugGuiVisuals {abstract} {require: WorldPosition} begin
+    @configurable function draw_order()::Int64
+        p::v3i = get_voxel_position(entity)
+        return p.x + (1000 * p.y) + (1000000 * p.z)
+    end
+
+    @promise visualize(data::DebugGuiRenderData)
 end
 
 
 ##   Specific Components   ##
 
-"A rock voxel element with a specific color"
-mutable struct DebugGuiVisualsComponent_Rock <: AbstractDebugGuiVisualsComponent
-end
+# "A rock voxel element with a specific color"
+@component DebugGuiVisuals_Rock <: DebugGuiVisuals begin
+    function visualize(data::DebugGuiRenderData)
+        voxel_pos::v3i = get_voxel_position(entity)
+        if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
+            world_rect = Box3Df(center=voxel_pos, size=one(v3f))
+            gui_rect = world_to_gui(world_rect, data)
 
-function gui_visualize(b::DebugGuiVisualsComponent_Rock, e::Entity, data::DebugGuiRenderData)
-    voxel_pos::v3i = get_voxel_position(e)
-    if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
-        world_rect = Box3Df(center=voxel_pos, size=one(v3f))
-        gui_rect = world_to_gui(world_rect, data)
-        CImGui.ImDrawList_AddRectFilled(
-            data.draw_list,
-            min_inclusive(gui_rect).xy,
-            max_inclusive(gui_rect).xy,
-            if has_component(e, GoldComponent)
-                CImGui.ImVec4(0.93, 0.66, 0.05, 1)
-            else
-                CImGui.ImVec4(0.4, 0.15, 0.01, 1)
-            end,
-            @f32(4),
-            CImGui.LibCImGui.ImDrawFlags_None
-        )
+            CImGui.ImDrawList_AddRectFilled(
+                data.draw_list,
+                min_inclusive(gui_rect).xy,
+                max_inclusive(gui_rect).xy,
+                if has_component(entity, Gold)
+                    CImGui.ImVec4(0.93, 0.66, 0.05, 1)
+                else
+                    CImGui.ImVec4(0.4, 0.15, 0.01, 1)
+                end,
+                @f32(4),
+                CImGui.LibCImGui.ImDrawFlags_None
+            )
+        end
     end
 end
 
+@component DebugGuiVisuals_DrillPod <: DebugGuiVisuals {require: WorldOrientation} begin
+    body_color::vRGBAf
+    radius::Float32
+    thickness::Float32
 
-@kwdef mutable struct DebugGuiVisualsComponent_DrillPod <: AbstractDebugGuiVisualsComponent
-    body_color::vRGBAf = Vec(0.2, 1, 0.5, 1)
-    radius::Float32 = 10
-    thickness::Float32 = 3
+    arrow_color::vRGBAf
+    arrow_length_scale::Float32
+    arrow_thickness::Float32
 
-    arrow_color::vRGBAf = Vec(1, 0.7, 0.7, 1)
-    arrow_length_scale::Float32 = 15
-    arrow_thickness::Float32 = 3
-end
+    draw_order() = typemax(Int64)
+    function visualize(data::DebugGuiRenderData)
+        pos::v3f = get_cosmetic_pos(entity)
+        rot::fquat = get_cosmetic_rot(entity)
+        forward::v3f = q_apply(rot, get_horz_vector(1))
 
-ECS.require_components(::Type{DebugGuiVisualsComponent_DrillPod}) = (
-    AbstractVoxelPositionComponent,
-    OrientationComponent
-)
+        # Scale the length of the forward vector for the GUI.
+        forward = map(sign, forward) * (abs(forward) ^ @f32(2)) * this.arrow_length_scale
 
-draw_order(::DebugGuiVisualsComponent_DrillPod, ::Entity) = typemax(Int64)
+        gui_pos = world_to_gui(pos, data)
+        gui_forward = world_to_gui(forward, data, true)
 
-function gui_visualize(dp::DebugGuiVisualsComponent_DrillPod, e::Entity, data::DebugGuiRenderData)
-    pos::v3f = get_cosmetic_pos(e)
-    rot::fquat = get_cosmetic_rot(e)
-    forward::v3f = q_apply(rot, get_horz_vector(1))
-
-    # Scale the length of the forward vector for the GUI.
-    forward = map(sign, forward) * (abs(forward) ^ @f32(2)) * dp.arrow_length_scale
-
-    gui_pos = world_to_gui(pos, data)
-    gui_forward = world_to_gui(forward, data, true)
-
-    CImGui.ImDrawList_AddCircle(
-        data.draw_list,
-        gui_pos.xy,
-        dp.radius,
-        CImGui.ImVec4(dp.body_color...),
-        0,
-        dp.thickness
-    )
-    CImGui.ImDrawList_AddLine(
-        data.draw_list,
-        gui_pos.xy,
-        gui_pos.xy + gui_forward.xy,
-        CImGui.ImVec4(dp.arrow_color...),
-        dp.arrow_thickness
-    )
+        CImGui.ImDrawList_AddCircle(
+            data.draw_list,
+            gui_pos.xy,
+            this.radius,
+            CImGui.ImVec4(this.body_color...),
+            0,
+            this.thickness
+        )
+        CImGui.ImDrawList_AddLine(
+            data.draw_list,
+            gui_pos.xy,
+            gui_pos.xy + gui_forward.xy,
+            CImGui.ImVec4(this.arrow_color...),
+            this.arrow_thickness
+        )
+    end
 end

@@ -56,7 +56,7 @@ end
 One of the pre-programmed movements the player can make under certain conditions.
 Uses canonical cab directions (forward is +X, rightward is +Y, and upward is +Z.
 "
-struct CabMovement
+struct CabMovementData
     time_seconds::Float32
     keyframes::Vector{CabMovementKeyframe} # Each keyframe position must be empty of rock
                                            #    for the move to be legal.
@@ -68,7 +68,7 @@ const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
                          SV = Vec{NShakeModes, Float32}
     [
         # Move forward on treads.
-        CabMovement(
+        CabMovementData(
             3.0,
             [
                 CMKf(v3f(0, 0, 0), 0.02,
@@ -89,7 +89,7 @@ const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
         ),
 
         # Climb up over a corner.
-        CabMovement(
+        CabMovementData(
             5.0,
             [
                 CMKf(v3f(0, 0, 0), 0.02,
@@ -115,7 +115,7 @@ const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
         ),
 
         # Climb down across a corner.
-        CabMovement(
+        CabMovementData(
             6.0,
             [
                 CMKf(v3f(0, 0, 0), 0.02,
@@ -156,7 +156,7 @@ end
 
 
 #######################
-#  Movement Orientation
+#  Movement WorldOrientation
 
 struct CabMovementDir
     grid::GridDirection
@@ -202,7 +202,7 @@ end
 Checks if a movement is legal.
 The forward direction of movement is specified as an 'axis' of 1 or 2, and a 'direction' of -1 or +1.
 "
-function is_legal(move::CabMovement, dir::CabMovementDir,
+function is_legal(move::CabMovementData, dir::CabMovementDir,
                   start_grid_pos::v3i,
                   is_free::Base.Callable # (grid_idx::Vec3) -> Bool
                  )
