@@ -2,7 +2,8 @@ module Drill8
 
 using Random, Setfield
 
-using CImGui, GLFW, CSyntax
+using CImGui, GLFW, CSyntax,
+      StaticArrays
 
 using Bplus
 @using_bplus
@@ -34,7 +35,7 @@ end
     plain = 1,
     gold = 2
 )
-grid_pos(world_pos::Vec3)::v3i = round(Int32, world_pos)
+grid_idx(world_pos::Vec3)::v3i = round(Int32, world_pos)
 
 include("grid_directions.jl")
 include("cab.jl")
@@ -316,7 +317,7 @@ function julia_main()::Cint
                     world_dir::v3f = rotate_cab_movement(convert(v3f, canonical_dir),
                                                          current_move_dir)
                     drilled_pos = get_precise_position(entity_player) + world_dir
-                    drilled_grid_pos = grid_pos(drilled_pos)
+                    drilled_grid_pos = grid_idx(drilled_pos)
                     return is_touching(Box3Di(min=one(v3i), size=vsize(rock_grid)), drilled_grid_pos) &&
                            !is_grid_free(drilled_grid_pos)
                 end

@@ -24,7 +24,7 @@ end
 @component ContinuousPosition <: WorldPosition begin
     pos::v3f
 
-    get_voxel_position() = grid_pos(this.pos)
+    get_voxel_position() = grid_idx(this.pos)
     get_precise_position() = this.pos
 end
 

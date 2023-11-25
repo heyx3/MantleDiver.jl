@@ -209,7 +209,7 @@ function is_legal(move::CabMovementData, dir::CabMovementDir,
     # All keyframed positions should occupy empty space.
     for key::CabMovementKeyframe in move.keyframes
         grid_pos_f = start_grid_pos + rotate_cab_movement(key.delta_pos, dir)
-        grid_position = grid_pos(grid_pos_f)
+        grid_position = grid_idx(grid_pos_f)
         if !is_free(grid_position)
             return false
         end
