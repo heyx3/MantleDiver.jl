@@ -5,7 +5,7 @@ using Bplus
 @using_bplus
 
 # Set up debug asserts:
-Bplus.ECS.bp_ecs_asserts_enabled() = true
+BplusTools.ECS.bp_ecs_asserts_enabled() = true
 D8.d8_asserts_enabled() = true
 
 

@@ -8,7 +8,7 @@ using CImGui, GLFW, CSyntax,
 using Bplus
 @using_bplus
 # Reconfigure B+'s coordinate system to match Dear ImGUI.
-Bplus.Math.get_right_handed() = false
+Bplus.BplusCore.Math.get_right_handed() = false
 
 const PI2 = Float32(2π)
 

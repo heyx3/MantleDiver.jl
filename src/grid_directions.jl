@@ -1,5 +1,5 @@
-const GridDirection = Bplus.GL.E_CubeFaces
-const GridDirections = Bplus.GL.CubeFaces
+const GridDirection = BplusApp.GL.E_CubeFaces
+const GridDirections = BplusApp.GL.CubeFaces
 
 "Gets the axis of the given direction (1=X, 2=Y, 3=Z)"
 function grid_axis(dir::GridDirection)::UInt8
