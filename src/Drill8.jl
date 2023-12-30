@@ -30,12 +30,10 @@ macro shout(data...)
 end
 
 
-@bp_enum(RockTypes::UInt8,
-    empty = 0,
-    plain = 1,
-    gold = 2
-)
+# The world grid coordinate system places cell centers at integer values.
 grid_idx(world_pos::Vec3)::v3i = round(Int32, world_pos)
+is_min_half_of_grid_cell(f::Real) = (f > convert(typeof(f), 0.5))
+is_min_half_of_grid_cell(p::Vec) = map(is_min_half_of_grid_cell, v)
 
 include("grid_directions.jl")
 include("cab.jl")
@@ -43,10 +41,11 @@ include("cab.jl")
 include("Components/transforms.jl")
 include("Components/game_grid.jl")
 include("Components/rocks.jl")
-include("Components/player.jl")
+include("Components/player_maneuvers.jl")
 include("Components/debug_gui_visuals.jl")
 
 include("entity_prototypes.jl")
+include("level_generator.jl")
 
 
 function julia_main()::Cint
@@ -62,70 +61,19 @@ function julia_main()::Cint
             println("Seed used: ", game_seed)
             Random.seed!(game_seed)
 
-            # Generate the rock grid.
-            rock_grid = fill(RockTypes.plain, 4, 4, 16)
-            top_rock_layer::Int = size(rock_grid, 3)
-            # Keep the top layer empty.
-            rock_grid[:, :, top_rock_layer] .= RockTypes.empty
-            # Randomly remove pieces of rock.
-            n_subtractions::Int = length(rock_grid) ÷ 5
-            for _ in 1:n_subtractions
-                local pos::Vec3{<:Integer}
-                @do_while begin
-                    pos = rand(1:vsize(rock_grid))
-                end rock_grid[pos] != RockTypes.plain
-                rock_grid[pos] = RockTypes.empty
-            end
-            # Ensure there's at least one solid rock underneath the top layer,
-            #    for the player to spawn on.
-            if all(r -> (r==RockTypes.empty), @view rock_grid[:, :, top_rock_layer - 1])
-                fill_pos = rand(v2i(1, 1) : vsize(rock_grid).xy)
-                rock_grid[fill_pos..., top_rock_layer - 1] = RockTypes.plain
-            end
-            # Insert some pieces of gold.
-            n_golds::Int = 5
-            for _ in 1:n_golds
-                local pos::Vec3{Int}
-                counter::Int = 0
-                @do_while begin
-                    pos = rand(1:vsize(rock_grid))
-                    counter += 1
-                end (counter < 999) && (rock_grid[pos] != RockTypes.plain)
-                if counter >= 1000
-                    display(rock_grid)
-                    error("Infinite loop! Grid printout is above.")
-                end
-                rock_grid[pos] = RockTypes.gold
-            end
+            player_start_pos = v3i(0, 0, 16)
 
             # Set up the ECS world.
             ecs_world::World = World()
-            entity_grid = make_grid(ecs_world, vsize(rock_grid))
+            entity_grid = make_grid(ecs_world, vsize(rock_grid),
+                                    MainGenerator, player_start_pos,
+                                      5, 0.1,
+                                      0.8, 2.4)
             component_grid = get_component(entity_grid, GridManager)
-            is_grid_free(pos::Vec3{<:Integer}) = any(pos < 1) ||
-                                                 any(pos > vsize(component_grid.entities)) ||
-                                                 isnothing(component_grid.entities[pos])
 
-            # Turn the generated grid of data into real entities.
-            for grid_pos in 1:vsize(rock_grid)
-                if rock_grid[grid_pos] != RockTypes.empty
-                    make_rock(ecs_world, grid_pos,
-                              rock_grid[grid_pos] == RockTypes.gold)
-                end
-            end
-
-            # Place the player's cab in the top layer, above solid rock.
-            entity_player = make_player(
-                ecs_world,
-                begin
-                    local pos::v2i
-                    pos3D()::v3i = vappend(pos, top_rock_layer)
-                    @do_while begin
-                        pos = rand(1:get_horz(vsize(rock_grid)))
-                    end (rock_grid[pos3D() - v3i(0, 0, 1)] == RockTypes.empty)
-                    pos3D()
-                end
-            )
+            # Spawn the player.
+            entity_player = make_player(ecs_world, player_start_pos)
+            check_for_fall(entity_player, component_grid)
 
             # Initialize the GUI for turning and moving.
             TURN_INCREMENT_DEG = @f32(30)

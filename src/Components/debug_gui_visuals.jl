@@ -77,6 +77,18 @@ end
 
 ##   Specific Components   ##
 
+const ROCK_COLOR = vRGBf(93, 76, 82) / 255
+const MINERAL_COLORS = PerMineral{vRGBf}(
+    vRGBf(141, 191, 179),
+    vRGBf(242, 235, 192),
+    vRGBf(243, 180, 98),
+    vRGBf(240, 96, 96),
+    vRGBf(47, 127, 51),
+    vRGBf(244, 64, 52)
+) / 255
+const MINERAL_MAX_COLOR_POINT = @f32(1)
+const MINERAL_COLOR_DROPOFF = @f32(1.7)
+
 # "A rock voxel element with a specific color"
 @component DebugGuiVisuals_Rock <: DebugGuiVisuals begin
     function visualize(data::DebugGuiRenderData)
@@ -84,16 +96,20 @@ end
         if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
             world_rect = Box3Df(center=voxel_pos, size=one(v3f))
             gui_rect = world_to_gui(world_rect, data)
+            rock = get_component(entity, Rock)
+
+            color::vRGBf = ROCK_COLOR
+            for (mineral_color, mineral_strength) in zip(MINERAL_COLORS, rock.minerals)
+                color_strength = saturate(mineral_strength / MINERAL_MAX_COLOR_POINT)
+                color_strength ^= MINERAL_COLOR_DROPOFF
+                color = lerp(color, mineral_color, color_strength)
+            end
 
             CImGui.ImDrawList_AddRectFilled(
                 data.draw_list,
                 min_inclusive(gui_rect).xy,
                 max_inclusive(gui_rect).xy,
-                if has_component(entity, Gold)
-                    CImGui.ImVec4(0.93, 0.66, 0.05, 1)
-                else
-                    CImGui.ImVec4(0.4, 0.15, 0.01, 1)
-                end,
+                CImGui.ImVec4(color..., 1),
                 @f32(4),
                 CImGui.LibCImGui.ImDrawFlags_None
             )

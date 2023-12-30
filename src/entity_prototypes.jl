@@ -2,10 +2,13 @@
 
 ##   Grid   ##
 
-function make_grid(world::World, size::Vec3{<:Integer})::Entity
+function make_grid(world::World, size::Vec3{<:Integer},
+                   generator::Type{<:GridGenerator},
+                   generator_args...)::Entity
     entity = add_entity(world)
 
     grid = add_component(entity, GridManager, size)
+    generator = add_component(entity, generator, generator_args...)
 
     return entity
 end
@@ -86,17 +89,14 @@ end
 
 ##   Rocks   ##
 
-function make_rock(world::World, grid_pos::Vec3{<:Integer}, is_gold::Bool)::Entity
+function make_rock(world::World, grid_pos::Vec3{<:Integer},
+                   mineral_amounts::PerMineral{Float32})::Entity
     entity = add_entity(world)
 
     pos_component = add_component(entity, DiscretePosition, grid_pos)
     debug_visuals = add_component(entity, DebugGuiVisuals_Rock)
     grid_element = add_component(entity, GridElement)
-    gold_marker = if is_gold
-        add_component(entity, Gold)
-    else
-        nothing
-    end
+    rock = add_component(entity, Rock, mineral_amounts)
 
     return entity
 end
