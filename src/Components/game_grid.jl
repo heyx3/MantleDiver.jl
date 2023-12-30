@@ -123,10 +123,16 @@ end
 ##   Element   ##
 
 @component GridElement {entitySingleton} {require: DiscretePosition} begin
-    function CONSTRUCT(new_pos::Optional{v3i} = nothing
+    # Whether this element blocks movement.
+    is_solid::Bool
+
+    function CONSTRUCT(is_solid::Bool = false,
+                       new_pos::Optional{v3i} = nothing
                        ;
                        grid::GridManager = get_component(world, GridManager)[1],
                        chunk::Optional{GridChunk} = nothing)
+        this.is_solid = is_solid
+
         # Get or set the position as instructed by the user.
         pos::v3i = if exists(new_pos)
             get_component(entity, DiscretePosition).pos = new_pos
@@ -164,4 +170,9 @@ end
             end
         end
     end
+end
+
+function is_passable(gm::GridManager, world_grid_pos::Vec3)::Bool
+    entity = entity_at!(gm, world_grid_pos)
+    return exists(entity) && get_component(entity, GridElement).is_solid
 end

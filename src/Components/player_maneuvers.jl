@@ -17,6 +17,7 @@
     function DESTRUCT(is_entity_dying::Bool)
         if !is_entity_dying
             remove_component(entity, this.shake_component)
+            check_for_fall(pos_component)
         end
     end
 
@@ -49,6 +50,12 @@
         if this.progress_normalized >= 1
             this.finish_maneuver()
             remove_component(entity, this)
+
+            # If there's nothing below the cab, start falling!
+            if entity_at!(get_component(world, GridManager),
+                          this.pos_component.get_voxel_position())
+
+            end
         end
     end
 end
@@ -223,5 +230,83 @@ end
         end
 
         return shake_strengths * shake_window
+    end
+end
+
+
+##   Falling   ##
+
+const GRAVITY_ACCEL = @f32(1.0)
+const FALL_SHAKE_CURVE = @f32(2.0)
+
+@component CabFall <: Maneuver begin
+    speed::Float32
+
+    function CONSTRUCT()
+        this.speed = 0
+        SUPER(9999999) # Keep falling until we manually detect the ground is hit.
+    end
+
+    finish_maneuver() = nothing
+    shake_strengths() = Vec{NShakeModes, Float32}(
+        # Position-based shake is not used.
+        0,
+        # Rotation-based shake is based on current speed.
+        1 - pow(saturate(1 / max(0.00001, this.speed)), FALL_SHAKE_CURVE)
+    )
+
+    function TICK()
+        SUPER()
+
+        # Fall.
+        current_pos = this.pos_component.pos
+        next_pos = current_pos + v3f(0, 0, -speed * world.delta_seconds)
+        # Check for collisions on the way down.
+        (first_grid_idx, last_grid_idx) = grid_idx.((current_pos, next_pos))
+        if !is_min_half_of_grid_cell(next_pos.z) # End position isn't touching the floor of its cell?
+            @set! last_grid_idx.z += 1 # Then don't check the end position's cell floor
+        end
+        world_grid = get_component(world, GridManager)[1]
+        for passthrough_grid_pos in first_grid_idx:last_grid_idx
+            if !is_passable(world_grid, passthrough_grid_pos - v3i(0, 0, 1))
+                # Collision! Complete the fall.
+                this.pos_component.pos = grid_idx(passthrough_grid_pos)
+                remove_component(entity, this)
+                #TODO: Provide fall damage to the entity underneath the cab.
+                #TODO: Provide fall damage to the cab.
+                return nothing
+            end
+        end
+        # No collisions; complete the fall.
+        this.pos_component.pos = next_pos
+
+        # Accelerate.
+        speed += GRAVITY_ACCEL * world.delta_second
+    end
+end
+
+"
+Makes the given cab start falling if it's not on top of something.
+Returns whether this happened.
+Assumes the cab isn't in the middle of a maneuver already.
+
+You should provide the cab as its position component, but if you don't have that,
+    you can provide it as its Entity instead.
+
+You should provide the grid manager if you have it, for efficiency;
+    otherwise it will be found from the cab entity's World.
+"
+function check_for_fall(cab::Union{Entity, ContinuousPosition},
+                        world_grid::GridManager = get_component(cab.world, GridManager)[1]::GridManager
+                       )::Bool
+    if cab isa Entity
+        return check_for_fall(get_component(cab, ContinuousPosition), world_grid)
+    elseif is_passable(world_grid, cab.get_voxel_position() - v3i(0, 0, 1))
+        @d8_assert(isnothing(get_component(cab.entity, Maneuver)),
+                   "Cab is already in a maneuver and can't start falling: ", cab.entity)
+        add_component(cab.entity, CabFall)
+        return true
+    else
+        return false
     end
 end
