@@ -98,6 +98,11 @@ const MINERAL_COLOR_DROPOFF = @f32(1.7)
             gui_rect = world_to_gui(world_rect, data)
             rock = get_component(entity, Rock)
 
+            #DEBUG:
+            # if sum(abs(chunk_idx(voxel_pos) - v3i(0, 0, 2))) <= 1
+            #     println("\t", voxel_pos, " (chunk ", chunk_idx(voxel_pos), "): ", center(gui_rect))
+            # end
+
             color::vRGBf = ROCK_COLOR
             for (mineral_color, mineral_strength) in zip(MINERAL_COLORS, rock.minerals)
                 color_strength = saturate(mineral_strength / MINERAL_MAX_COLOR_POINT)

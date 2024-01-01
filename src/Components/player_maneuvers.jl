@@ -17,7 +17,7 @@
     function DESTRUCT(is_entity_dying::Bool)
         if !is_entity_dying
             remove_component(entity, this.shake_component)
-            check_for_fall(pos_component)
+            check_for_fall(this.pos_component)
         end
     end
 
@@ -50,12 +50,6 @@
         if this.progress_normalized >= 1
             this.finish_maneuver()
             remove_component(entity, this)
-
-            # If there's nothing below the cab, start falling!
-            if entity_at!(get_component(world, GridManager),
-                          this.pos_component.get_voxel_position())
-
-            end
         end
     end
 end
@@ -205,12 +199,12 @@ end
         this.pos_component.pos = this.original_pos + delta
 
         grid = get_component(world, GridManager)[1]
-        voxel = this.pos_component.get_voxel_position()
-        rock = grid.entities[voxel]
-        if isnothing(rock)
+        drilled_entity = entity_at!(grid, this.pos_component.get_voxel_position())
+        if isnothing(drilled_entity)
             @warn "Drilled into an empty spot! Something else destroyed it first?"
         else
-            remove_entity(world, rock)
+            #TODO: Code a DrillResponseComponent
+            remove_entity(world, drilled_entity)
         end
     end
 
@@ -252,15 +246,13 @@ const FALL_SHAKE_CURVE = @f32(2.0)
         # Position-based shake is not used.
         0,
         # Rotation-based shake is based on current speed.
-        1 - pow(saturate(1 / max(0.00001, this.speed)), FALL_SHAKE_CURVE)
+        1 - (saturate(1 / max(0.00001, this.speed)) ^ FALL_SHAKE_CURVE)
     )
 
     function TICK()
-        SUPER()
-
         # Fall.
         current_pos = this.pos_component.pos
-        next_pos = current_pos + v3f(0, 0, -speed * world.delta_seconds)
+        next_pos = @set current_pos.z -= this.speed * world.delta_seconds
         # Check for collisions on the way down.
         (first_grid_idx, last_grid_idx) = grid_idx.((current_pos, next_pos))
         if !is_min_half_of_grid_cell(next_pos.z) # End position isn't touching the floor of its cell?
@@ -281,7 +273,7 @@ const FALL_SHAKE_CURVE = @f32(2.0)
         this.pos_component.pos = next_pos
 
         # Accelerate.
-        speed += GRAVITY_ACCEL * world.delta_second
+        this.speed += GRAVITY_ACCEL * world.delta_seconds
     end
 end
 

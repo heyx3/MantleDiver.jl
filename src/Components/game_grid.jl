@@ -113,10 +113,24 @@ If no chunk exists there, a new one is generated on-demand.
 entity_at!(gm::GridManager, world_grid_pos::Vec3)::Optional{Entity} = begin
     world_grid_idx = grid_idx(world_grid_pos)
     chunk_id = chunk_idx(world_grid_idx)
-    chunk = chunk_at!(gm, chunk_id)
+    chunk = chunk_at!(gm, world_grid_pos)
 
     chunk_grid_idx = 1 + chunk_relative_pos(chunk_id, world_grid_idx)
     return chunk.elements[chunk_grid_idx]
+end
+"
+Gets the grid entity at the given location, and checks it for the given component.
+Generates the relevant chunk if it doesn't exist yet.
+
+Returns `nothing` if no entity is there, or the entity does not have that component.
+"
+function component_at!(gm::GridManager, world_grid_pos::Vec3, ::Type{T})::Optional{T} where {T<:AbstractComponent}
+    entity = entity_at!(gm, world_grid_pos)
+    if isnothing(entity)
+        return nothing
+    else
+        return get_component(entity, T)::Optional{T}
+    end
 end
 
 
@@ -173,6 +187,6 @@ end
 end
 
 function is_passable(gm::GridManager, world_grid_pos::Vec3)::Bool
-    entity = entity_at!(gm, world_grid_pos)
-    return exists(entity) && get_component(entity, GridElement).is_solid
+    grid_el = component_at!(gm, world_grid_pos, GridElement)
+    return isnothing(grid_el) || !grid_el.is_solid
 end

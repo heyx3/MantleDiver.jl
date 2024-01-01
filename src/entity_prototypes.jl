@@ -2,12 +2,12 @@
 
 ##   Grid   ##
 
-function make_grid(world::World, size::Vec3{<:Integer},
+function make_grid(world::World,
                    generator::Type{<:GridGenerator},
                    generator_args...)::Entity
     entity = add_entity(world)
 
-    grid = add_component(entity, GridManager, size)
+    grid = add_component(entity, GridManager)
     generator = add_component(entity, generator, generator_args...)
 
     return entity
@@ -52,15 +52,11 @@ function player_start_moving(player::Entity,
                              direction::CabMovementDir)
     @bp_check(
         begin
-            grid = get_component(player.world, GridManager)[1].entities
-            grid_idx_range = Box(
-                min=one(v3i),
-                size=vsize(grid)
-            )
+            grid = get_component(player.world, GridManager)[1]
             is_legal(
                 movement, direction,
                 get_voxel_position(player),
-                grid_pos -> is_touching(grid_idx_range, grid_pos) && isnothing(grid[grid_pos])
+                grid_pos -> is_passable(grid, grid_pos)
             )
         end,
         "Trying to do illegal move: ", movement, " in ", direction
@@ -70,16 +66,10 @@ end
 function player_start_drilling(player::Entity,
                                direction::GridDirection,
                                fx_seed::Float32 = rand(Float32))
-    @bp_check(
-        begin
-            grid = get_component(player.world, GridManager)[1].entities
-            grid_idx_range = Box(
-                min=one(v3i),
-                size=vsize(grid)
-            )
-            drilled_pos = get_voxel_position(player) + grid_vector(direction, Int32)
-            is_touching(grid_idx_range, drilled_pos) && !isnothing(grid[drilled_pos])
-        end,
+    @d8_assert(
+        exists(component_at!(get_component(player.world, GridManager)[1],
+                             get_voxel_position(player) + grid_vector(direction, Int32),
+                             Rock)),
         "Trying to do an illegal drill: ",
           "from ", get_voxel_position(player), " along direction ", direction
     )

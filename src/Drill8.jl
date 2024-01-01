@@ -65,10 +65,10 @@ function julia_main()::Cint
 
             # Set up the ECS world.
             ecs_world::World = World()
-            entity_grid = make_grid(ecs_world, vsize(rock_grid),
+            entity_grid = make_grid(ecs_world,
                                     MainGenerator, player_start_pos,
-                                      5, 0.1,
-                                      0.8, 2.4)
+                                      5, 0.39,
+                                      3, 0.28, 2.4)
             component_grid = get_component(entity_grid, GridManager)
 
             # Spawn the player.
@@ -101,6 +101,12 @@ function julia_main()::Cint
             # Update game logic.
             elapsed_seconds += LOOP.delta_seconds
             ECS.tick_world(ecs_world, LOOP.delta_seconds)
+
+            # Make sure chunks near the player are all generated.
+            player_voxel_pos = get_voxel_position(entity_player)
+            for corner in -1:one(v3i)
+                chunk_at!(component_grid, player_voxel_pos + (corner * CHUNK_SIZE))
+            end
 
             # Use GUI widgets to debug render two perpendicular slices of the game.
             size_window_proportionately(Box2Df(min=Vec(0.01, 0.01), max=Vec(0.49, 0.99)))
@@ -142,10 +148,10 @@ function julia_main()::Cint
                               end - DRAW_BORDER
                     )
                     world_slice_space = Box2Df(
-                        min = let min3D = one(v3f)
-                            Vec(min3D[ui_x_axis], min3D[3]) - 0.5
+                        center = let center3D = player_voxel_pos
+                            Vec(center3D[ui_x_axis], center3D[3])
                         end,
-                        size = let size3D = vsize(rock_grid)
+                        size = let size3D = v3i(4, 4, 10)
                             Vec(size3D[ui_x_axis], size3D[3])
                         end
                     )
@@ -167,8 +173,10 @@ function julia_main()::Cint
                     )
 
                     # Draw all elements.
-                    for (component, entity, _) in sorted_gui_display_elements
-                        component.visualize(gui_render_data)
+                    gui_with_clip_rect(gui_render_data.gui_range, false, gui_render_data.draw_list) do
+                        for (component, entity, _) in sorted_gui_display_elements
+                            component.visualize(gui_render_data)
+                        end
                     end
                 end
 
@@ -241,7 +249,7 @@ function julia_main()::Cint
                 (MOVE_FORWARD, MOVE_CLIMB, MOVE_DROP) = LEGAL_MOVES
                 (forward_is_legal, climb_is_legal, drop_is_legal) =
                     is_legal.(LEGAL_MOVES, Ref(current_move_dir),
-                              Ref(get_voxel_position(entity_player)), Ref(is_grid_free))
+                              Ref(get_voxel_position(entity_player)), Ref(pos -> is_passable(component_grid, pos)))
                 if maneuver_button("x##Move"; force_disable=!forward_is_legal)
                     player_start_moving(entity_player, MOVE_FORWARD, current_move_dir)
                 end
@@ -266,8 +274,7 @@ function julia_main()::Cint
                                                          current_move_dir)
                     drilled_pos = get_precise_position(entity_player) + world_dir
                     drilled_grid_pos = grid_idx(drilled_pos)
-                    return is_touching(Box3Di(min=one(v3i), size=vsize(rock_grid)), drilled_grid_pos) &&
-                           !is_grid_free(drilled_grid_pos)
+                    return exists(component_at!(component_grid, drilled_grid_pos, Rock)) #TODO: Drillable component for grid entities
                 end
                 CImGui.Text("DRILL"); CImGui.SameLine()
                 CImGui.Dummy(10, 0); CImGui.SameLine()
