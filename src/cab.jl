@@ -1,4 +1,8 @@
-# Cab position and movement/animation.
+"All the choices/purchases the player has made"
+struct PlayerLoadout
+
+end
+
 
 #######################
 #  Shake

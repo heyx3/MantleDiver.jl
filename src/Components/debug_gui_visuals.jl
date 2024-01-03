@@ -92,16 +92,11 @@ const MINERAL_COLOR_DROPOFF = @f32(1.7)
 # "A rock voxel element with a specific color"
 @component DebugGuiVisuals_Rock <: DebugGuiVisuals begin
     function visualize(data::DebugGuiRenderData)
-        voxel_pos::v3i = get_voxel_position(entity)
+        voxel_pos::v3i = get_component(entity, DiscretePosition).get_voxel_position()
         if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
             world_rect = Box3Df(center=voxel_pos, size=one(v3f))
             gui_rect = world_to_gui(world_rect, data)
             rock = get_component(entity, Rock)
-
-            #DEBUG:
-            # if sum(abs(chunk_idx(voxel_pos) - v3i(0, 0, 2))) <= 1
-            #     println("\t", voxel_pos, " (chunk ", chunk_idx(voxel_pos), "): ", center(gui_rect))
-            # end
 
             color::vRGBf = ROCK_COLOR
             for (mineral_color, mineral_strength) in zip(MINERAL_COLORS, rock.minerals)
