@@ -65,7 +65,7 @@ end
 ##   Abstract component   ##
 
 # "Something that can be visualized within the Dear ImGUI debug visualization of the world"
-@component DebugGuiVisuals {abstract} {require: WorldPosition} begin
+@component DebugGuiVisuals {abstract} begin
     @configurable function draw_order()::Int64
         p::v3i = get_voxel_position(entity)
         return p.x + (1000 * p.y) + (1000000 * p.z)
@@ -89,30 +89,48 @@ const MINERAL_COLORS = PerMineral{vRGBf}(
 const MINERAL_MAX_COLOR_POINT = @f32(1)
 const MINERAL_COLOR_DROPOFF = @f32(1.7)
 
-# "A rock voxel element with a specific color"
-@component DebugGuiVisuals_Rock <: DebugGuiVisuals begin
+# "Draws the bulk of rocks"
+@component DebugGuiVisuals_Rocks <: DebugGuiVisuals {require: RockBulkGridElement} begin
+    bulk::RockBulkGridElement
+    function CONSTRUCT()
+        SUPER()
+        this.bulk = get_component(entity, RockBulkGridElement)
+    end
+    draw_order() = typemin(Int64)
     function visualize(data::DebugGuiRenderData)
-        voxel_pos::v3i = get_component(entity, DiscretePosition).get_voxel_position()
-        if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
-            world_rect = Box3Df(center=voxel_pos, size=one(v3f))
-            gui_rect = world_to_gui(world_rect, data)
-            rock = get_component(entity, Rock)
+        for voxel_pos_2D::v2i in grid_idx(min_inclusive(data.world_voxel_range)):grid_idx(max_inclusive(data.world_voxel_range))
+            voxel_pos::v3i =
+                if data.horizontal_axis == 1
+                    v3i(voxel_pos_2D.x, data.horizontal_depth, voxel_pos_2D.y)
+                elseif data.horizontal_axis == 2
+                    v3i(data.horizontal_depth, voxel_pos_2D.x, voxel_pos_2D.y)
+                else
+                    error(data.horizontal_axis)
+                end
+            if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
+                world_rect = Box3Df(center=voxel_pos, size=one(v3f))
+                gui_rect = world_to_gui(world_rect, data)
+                rock = this.bulk.data_at(voxel_pos)
+                if isnothing(rock)
+                    continue
+                end
 
-            color::vRGBf = ROCK_COLOR
-            for (mineral_color, mineral_strength) in zip(MINERAL_COLORS, rock.minerals)
-                color_strength = saturate(mineral_strength / MINERAL_MAX_COLOR_POINT)
-                color_strength ^= MINERAL_COLOR_DROPOFF
-                color = lerp(color, mineral_color, color_strength)
+                color::vRGBf = ROCK_COLOR
+                for (mineral_color, mineral_strength) in zip(MINERAL_COLORS, rock.minerals)
+                    color_strength = saturate(mineral_strength / MINERAL_MAX_COLOR_POINT)
+                    color_strength ^= MINERAL_COLOR_DROPOFF
+                    color = lerp(color, mineral_color, color_strength)
+                end
+
+                CImGui.ImDrawList_AddRectFilled(
+                    data.draw_list,
+                    min_inclusive(gui_rect).xy,
+                    max_inclusive(gui_rect).xy,
+                    CImGui.ImVec4(color..., 1),
+                    @f32(4),
+                    CImGui.LibCImGui.ImDrawFlags_None
+                )
             end
-
-            CImGui.ImDrawList_AddRectFilled(
-                data.draw_list,
-                min_inclusive(gui_rect).xy,
-                max_inclusive(gui_rect).xy,
-                CImGui.ImVec4(color..., 1),
-                @f32(4),
-                CImGui.LibCImGui.ImDrawFlags_None
-            )
         end
     end
 end

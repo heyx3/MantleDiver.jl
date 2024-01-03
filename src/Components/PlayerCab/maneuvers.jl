@@ -199,12 +199,12 @@ end
         this.pos_component.pos = this.original_pos + delta
 
         grid = get_component(world, GridManager)[1]
-        drilled_entity = entity_at!(grid, this.pos_component.get_voxel_position())
+        drilled_entity = entity_at(grid, this.pos_component.get_voxel_position())
         #TODO: Code a DrillResponseComponent
         if isnothing(drilled_entity)
             @warn "Drilled into an empty spot! Something else destroyed it first?"
         elseif drilled_entity isa BulkEntity
-            drilled_entity[1].destroy_at(drilled_entity[2])
+            remove_bulk_entity!(grid, this.pos_component.get_voxel_position())
         elseif drilled_entity isa Entity
             remove_entity(world, drilled_entity)
         else
@@ -262,8 +262,9 @@ const FALL_SHAKE_CURVE = @f32(2.0)
         if !is_min_half_of_grid_cell(next_pos.z) # End position isn't touching the floor of its cell?
             @set! last_grid_idx.z += 1 # Then don't check the end position's cell floor
         end
+        grid_check_range = first_grid_idx:-one(v3i):last_grid_idx
         world_grid = get_component(world, GridManager)[1]
-        for passthrough_grid_pos in first_grid_idx:last_grid_idx
+        for passthrough_grid_pos in grid_check_range
             if !is_passable(world_grid, passthrough_grid_pos - v3i(0, 0, 1))
                 # Collision! Complete the fall.
                 this.pos_component.pos = grid_idx(passthrough_grid_pos)

@@ -79,14 +79,23 @@ end
 
 ##   Rocks   ##
 
-function make_rock(world::World, grid_pos::Vec3{<:Integer},
-                   mineral_amounts::PerMineral{Float32})::Entity
-    entity = add_entity(world)
+"
+NOTE: Only registers the rock with the bulk grid entity, not with the chunks!
+So this should only be called from the level's Generator component.
+"
+function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock)::BulkEntity
+    # Get or make the bulk grid element for rocks.
+    rocks = let found = get_component(world, RockBulkGridElement)
+        if exists(found)
+            found[1]
+        else
+            en = add_entity(world)
+            add_component(en, DebugGuiVisuals_Rocks)
+            get_component(en, RockBulkGridElement)
+        end
+    end
 
-    pos_component = add_component(entity, DiscretePosition, grid_pos)
-    debug_visuals = add_component(entity, DebugGuiVisuals_Rock)
-    grid_element = add_component(entity, GridElement)
-    rock = add_component(entity, Rock, mineral_amounts)
-
-    return entity
+    grid_pos = convert(v3i, grid_pos)
+    rocks.create_at(grid_pos, data)
+    return (rocks, grid_pos)
 end

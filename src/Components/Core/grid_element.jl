@@ -24,7 +24,7 @@
             chunk = chunk_at(grid, pos)
         end
         if exists(chunk)
-            chunk_relative_idx = 1 + chunk_relative_pos(chunk.idx, pos)
+            chunk_relative_idx = chunk_grid_idx(chunk.idx, pos)
             @bp_check(isnothing(chunk.elements[chunk_relative_idx]),
                       "A grid element already exists at ", pos)
             chunk.elements[chunk_relative_idx] = entity
@@ -39,7 +39,7 @@
             world_grid_idx::v3i = get_component(entity, DiscretePosition).pos
             chunk = chunk_at(grid, world_grid_idx)
             if exists(chunk)
-                chunk_relative_idx = 1 + chunk_relative_pos(chunk.idx, world_grid_idx)
+                chunk_relative_idx = chunk_grid_idx(chunk.idx, world_grid_idx)
                 @bp_check(chunk.elements[chunk_relative_idx] == entity,
                         "Entity is not registered at its own voxel position ", world_grid_idx)
                 chunk.elements[chunk_relative_idx] = nothing
@@ -49,6 +49,15 @@
 end
 
 function is_passable(gm::GridManager, world_grid_pos::Vec3)::Bool
-    grid_el = component_at!(gm, world_grid_pos, GridElement)
-    return isnothing(grid_el) || !grid_el.is_solid
+    entity = entity_at!(gm, world_grid_pos)
+    if entity isa Entity
+        grid_el::GridElement = get_component(entity, GridElement)
+        return !grid_el.is_solid
+    elseif entity isa BulkEntity
+        return entity[1].is_passable(entity[2])
+    elseif isnothing(entity)
+        return true
+    else
+        error("Unknown type: ", typeof(entity))
+    end
 end

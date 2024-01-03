@@ -3,10 +3,34 @@
 # Chunks' initial elements are filled in by a GridGenerator.
 # The chunks, manager, and generator all live on a single entity.
 
+
+#=
+"
+Each grid cell can be occupied by a different entity.
+However, for things like rocks which are ubiquitous, this is inefficient.
+So you can also write a "bulk" grid entity which manages an unlimited set of simple cell objects.
+
+Each type of bulk entity should be a world singleton.
+"
+=#
+#TODO: Make this generic over the bulk data type. Then add the bulk data lookup to this base class.
+@component AbstractBulkGridElement {abstract} begin
+    @promise create_at(grid_idx::v3i, in_data)::Nothing # Adds the given data to this grid
+    @promise destroy_at(grid_idx::v3i)::Optional # Returns the removed data
+
+    @promise data_at(grid_idx::v3i)::Optional # Gets the data currently in this grid, or 'nothing'
+    @promise is_passable(grid_idx::v3i)::Bool # Gets whether the given grid element,
+                                              #    assumed to be in this bulk, is passable.
+end
+
+"An element within a bulk entity, represented with its world-grid index"
+const BulkEntity{T<:AbstractBulkGridElement} = Tuple{T, v3i}
+
+
 ##  GridGenerator  ##
 
 @component GridGenerator {abstract} {worldSingleton} begin
-    @promise generate(world_grid_idx::v3i)::Optional{Entity}
+    @promise generate(world_grid_idx::v3i)::Optional{Union{Entity, BulkEntity}}
 end
 
 
@@ -16,9 +40,30 @@ const CHUNK_SIZE = v3i(8, 8, 8)
 const ChunkElementGrid{T} = SizedArray{Tuple{Int.(CHUNK_SIZE)...}, T, 3,
                                        3, Array{T, 3}}
 
+"Gets the chunk covering a given grid postion"
+function chunk_idx(world_grid_pos::Vec3)::v3i
+    i = grid_idx(world_grid_pos) # If continuous, turn into voxel
+    return vselect(
+        i ÷ CHUNK_SIZE,
+        (i - CHUNK_SIZE + Int32(1)) ÷ CHUNK_SIZE,
+        i < 0
+    )
+end
+"Gets the min grid position within the given chunk"
+function chunk_first_grid_idx(chunk_idx::v3i)
+    return chunk_idx * CHUNK_SIZE
+end
+"Gets the array index for the given grid position within the given chunk"
+function chunk_grid_idx(chunk_idx::v3i, world_grid_pos::Vec3)::typeof(world_grid_pos)
+    first_grid_pos = chunk_first_grid_idx(chunk_idx)
+    ONE = one(eltype(world_grid_pos))
+    return world_grid_pos - first_grid_pos + ONE
+end
+
+
 @component GridChunk {require: GridGenerator} begin
     idx::v3i # Multiply by the chunk size to get the first grid index in this chunk
-    elements::ChunkElementGrid{Optional{Entity}}
+    elements::ChunkElementGrid{Optional{Union{Entity, AbstractBulkGridElement}}}
 
     function CONSTRUCT(idx::v3i)
         this.idx = idx
@@ -36,9 +81,15 @@ const ChunkElementGrid{T} = SizedArray{Tuple{Int.(CHUNK_SIZE)...}, T, 3,
     end
     function DESTRUCT(is_world_grid_dying::Bool)
         # Kill all grid entities within this chunk.
-        for element in this.elements
+        for idx in 1:vsize(this.elements)
+            element = this.elements[idx]
             if exists(element)
-                remove_entity(world, element)
+                if element isa AbstractBulkGridElement
+                    world_idx = (idx - Int32(1)) + (this.idx * CHUNK_SIZE)
+                    element.destroy_at(world_idx)
+                else
+                    remove_entity(world, element)
+                end
             end
         end
         # Un-register this chunk with the manager component.
@@ -53,23 +104,13 @@ end
     min = ch.idx * CHUNK_SIZE,
     size = CHUNK_SIZE
 )
-function chunk_idx(world_grid_pos::Vec3)
-    i = grid_idx(world_grid_pos) # If continuous, turn into voxel
-    return vselect(
-        i ÷ CHUNK_SIZE,
-        (i - CHUNK_SIZE + Int32(1)) ÷ CHUNK_SIZE,
-        i < 0
-    )
-end
-function chunk_relative_pos(chunk_idx::v3i, world_grid_pos::Vec3)
-    world_grid_pos - (chunk_idx * CHUNK_SIZE)
-end
 
 
 ##   Manager of chunks   ##
 
 @component GridManager {worldSingleton} begin
     chunks::Dict{v3i, GridChunk}
+    bulk_entities::Dict{Type, Any} # Each type of "bulk" entity is assumed to be a world singleton.
 
     CONSTRUCT() = (this.chunks = Dict{v3i, GridChunk}())
     function DESTRUCT()
@@ -77,23 +118,40 @@ end
         for chunk in collect(values(this.chunks))
             remove_component(entity, chunk)
         end
+        # Destroy all bulk entities.
+        for bulk_component in values(this.bulk_entities)
+            remove_component(bulk_component.entity, bulk_component)
+        end
+    end
+end
+
+function get_chunk_entity(chunk::GridChunk, chunk_id::v3i, world_grid_idx::v3i)::Optional{Union{Entity, BulkEntity}}
+    local_grid_idx = chunk_grid_idx(chunk_id, world_grid_idx)
+    element = chunk.elements[local_grid_idx]
+    if element isa Entity
+        return element
+    elseif element isa AbstractBulkGridElement
+        return (element, world_grid_idx)
+    elseif isnothing(element)
+        return nothing
+    else
+        error("Unexpected type: ", typeof(element))
     end
 end
 
 "Gets the chunk covering the given world position (if one exists)"
 chunk_at(gm::GridManager, world_grid_pos::Vec3)::Optional{GridChunk} =
     get(gm.chunks, chunk_idx(world_grid_pos), nothing)
-"Gets the entity covering the grid cell at the given world position (if one exists)"
-entity_at(gm::GridManager, world_grid_pos::Vec3)::Optional{Entity} = begin
+"Gets the entity (or bulk-entity) covering the grid cell at the given world position, if one exists"
+entity_at(gm::GridManager, world_grid_pos::Vec3)::Optional{Union{Entity, BulkEntity}} = begin
     world_grid_idx = grid_idx(world_grid_pos)
     chunk_id = chunk_idx(world_grid_idx)
-    chunk = chunk_at(gm, chunk_id)
+    chunk = chunk_at(gm, world_grid_idx)
     if isnothing(chunk)
         return nothing
+    else
+        return get_chunk_entity(chunk, chunk_id, world_grid_idx)
     end
-
-    chunk_grid_idx = 1 + chunk_relative_pos(chunk_id, world_grid_idx)
-    return chunk.elements[chunk_grid_idx]
 end
 
 "
@@ -107,28 +165,70 @@ chunk_at!(gm::GridManager, world_grid_pos::Vec3)::GridChunk = begin
     end
 end
 "
-Gets the entity covering the grid cell at the given world position.
+Gets the entity (or bulk entity) covering the grid cell at the given world position.
 If no chunk exists there, a new one is generated on-demand.
 "
-entity_at!(gm::GridManager, world_grid_pos::Vec3)::Optional{Entity} = begin
+entity_at!(gm::GridManager, world_grid_pos::Vec3)::Optional{Union{Entity, BulkEntity}} = begin
     world_grid_idx = grid_idx(world_grid_pos)
     chunk_id = chunk_idx(world_grid_idx)
-    chunk = chunk_at!(gm, world_grid_pos)
-
-    chunk_grid_idx = 1 + chunk_relative_pos(chunk_id, world_grid_idx)
-    return chunk.elements[chunk_grid_idx]
+    chunk = chunk_at!(gm, world_grid_idx)
+    return get_chunk_entity(chunk, chunk_id, world_grid_idx)
 end
 "
 Gets the grid entity at the given location, and checks it for the given component.
 Generates the relevant chunk if it doesn't exist yet.
 
-Returns `nothing` if no entity is there, or the entity does not have that component.
+Returns `nothing` if no entity is there, or the entity does not have that component,
+    or the entity is a bulk-entity and `T` is not its data-type.
 "
-function component_at!(gm::GridManager, world_grid_pos::Vec3, ::Type{T})::Optional{T} where {T<:AbstractComponent}
+function component_at!(gm::GridManager, world_grid_pos::Vec3, ::Type{T})::Optional{T} where {T}
     entity = entity_at!(gm, world_grid_pos)
     if isnothing(entity)
         return nothing
-    else
+    elseif entity isa Entity
         return get_component(entity, T)::Optional{T}
+    elseif entity isa BulkEntity
+        data = entity[1].data_at(entity[2])
+        if data isa T
+            return data
+        else
+            return nothing
+        end
     end
+end
+
+"Adds the given bulk-entity to the world"
+function add_bulk_entity!(gm::GridManager, world_grid_pos::Vec3,
+                          bulk::AbstractBulkGridElement, data)
+    world_grid_idx = grid_idx(world_grid_pos)
+    chunk_id = chunk_idx(world_grid_idx)
+    chunk_relative_idx = chunk_grid_idx(chunk_id, world_grid_idx)
+
+    chunk = chunk_at!(gm, world_grid_idx)
+
+    chunk.elements[chunk_relative_idx] = bulk
+    bulk.create_at(world_grid_idx, data)
+
+    return nothing
+end
+"
+Removes a bulk-entity from the world at the given grid position.
+"
+function remove_bulk_entity!(gm::GridManager, world_grid_pos::Vec3)::Nothing
+    # Do some coordinate math.
+    world_grid_idx = grid_idx(world_grid_pos)
+    chunk_id = chunk_idx(world_grid_idx)
+    local_grid_idx = chunk_grid_idx(chunk_id, world_grid_idx)
+
+    # Get the element at the grid position.
+    chunk = gm.chunks[chunk_id]
+    element = chunk.elements[local_grid_idx]
+    @bp_check(element isa AbstractBulkGridElement,
+              "Expected a bulk entity at ", world_grid_pos, " but got a ", typeof(element))
+
+    # Destroy it.
+    chunk.elements[local_grid_idx] = nothing
+    element.destroy_at(world_grid_idx)
+    return nothing # Returning the destroyed data would be nice
+                   #    but creates unavoidable type-instability
 end
