@@ -30,18 +30,16 @@ macro shout(data...)
 end
 
 
-# The world grid coordinate system places cell centers at integer values.
-grid_idx(world_pos::Vec3)::v3i = round(Int32, world_pos)
-is_min_half_of_grid_cell(f::Real) = (f > convert(typeof(f), 0.5))
-is_min_half_of_grid_cell(p::Vec) = map(is_min_half_of_grid_cell, v)
+include("Components/Core/transforms.jl")
+include("Components/Core/grid_data.jl")
+include("Components/Core/grid_manager.jl")
+include("Components/Core/grid_element.jl")
 
-include("grid_directions.jl")
-include("cab.jl")
+include("Components/GridObjects/rock.jl")
 
-include("Components/transforms.jl")
-include("Components/game_grid.jl")
-include("Components/rocks.jl")
-include("Components/player_maneuvers.jl")
+include("Components/PlayerCab/data.jl")
+include("Components/PlayerCab/maneuvers.jl")
+
 include("Components/debug_gui_visuals.jl")
 
 include("entity_prototypes.jl")

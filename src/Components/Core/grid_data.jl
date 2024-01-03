@@ -1,3 +1,9 @@
+# The world grid coordinate system places cell centers at integer values.
+grid_idx(world_pos::Vec3)::v3i = round(Int32, world_pos)
+is_min_half_of_grid_cell(f::Real) = (f > convert(typeof(f), 0.5))
+is_min_half_of_grid_cell(p::Vec) = map(is_min_half_of_grid_cell, v)
+
+
 const GridDirection = BplusApp.GL.E_CubeFaces
 const GridDirections = BplusApp.GL.CubeFaces
 
