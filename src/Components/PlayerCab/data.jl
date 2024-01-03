@@ -18,7 +18,7 @@ end
 Different ways the cab can shake.
 Each method is a function mapping a time value to a `CabShakeState`.
 "
-const CAB_SHAKE_MODES = Base.Callable[
+const CAB_SHAKE_MODES = tuple(
     (t::Float32) -> CabShakeState(
         0.02 * v3f(
             sin(t * PI2 * 99999),
@@ -37,8 +37,8 @@ const CAB_SHAKE_MODES = Base.Callable[
         @f32(π) * sin(t * PI2 *  111111) * 0.02,
         @f32(π) * sin(t * PI2 * 3333333) * 0.02
     )
-]
-const NShakeModes = length(CAB_SHAKE_MODES)
+)
+const N_SHAKE_MODES = length(CAB_SHAKE_MODES)
 
 
 #######################
@@ -53,7 +53,7 @@ const NShakeModes = length(CAB_SHAKE_MODES)
 struct CabMovementKeyframe
     delta_pos::v3f
     t::Float32
-    shake_strengths::VecF{NShakeModes}
+    shake_strengths::VecF{N_SHAKE_MODES}
 end
 
 "
@@ -69,7 +69,7 @@ struct CabMovementData
                                 # Cells outside the level bounds are considered solid.
 end
 const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
-                         SV = Vec{NShakeModes, Float32}
+                         SV = Vec{N_SHAKE_MODES, Float32}
     [
         # Move forward on treads.
         CabMovementData(

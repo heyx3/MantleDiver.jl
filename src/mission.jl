@@ -12,7 +12,7 @@ mutable struct Mission
                      seed::UInt = rand(UInt))
         PLAYER_START_POS = v3i(0, 0, 0)
 
-        println(stderr, "Seed used: ", seed)
+        @d8_debug println(stderr, "Seed used: ", seed)
         Random.seed!(seed)
 
         world = ECS.World()

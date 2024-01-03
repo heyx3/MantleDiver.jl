@@ -22,14 +22,14 @@
     end
 
     @promise finish_maneuver()
-    @configurable shake_strengths()::Vec{NShakeModes, Float32} = zero(Vec{NShakeModes, Float32})
+    @configurable shake_strengths()::Vec{N_SHAKE_MODES, Float32} = zero(Vec{N_SHAKE_MODES, Float32})
 
     function TICK()
         this.progress_normalized += world.delta_seconds / this.duration
 
         # Calculate shaking.
         shake_strengths = this.shake_strengths()
-        shake_states = Vec{NShakeModes, CabShakeState}(
+        shake_states = Vec{N_SHAKE_MODES, CabShakeState}(
             i -> CAB_SHAKE_MODES[i](world.elapsed_seconds)
         )
         # Apply shaking to the entity.
@@ -100,7 +100,7 @@ end
 @component CabMovement <: Maneuver begin
     original_pos::v3f
     key_idx::Int
-    computed_shake_strengths::Vec{NShakeModes, Float32}
+    computed_shake_strengths::Vec{N_SHAKE_MODES, Float32}
     src::CabMovementData
     heading::CabMovementDir
 
@@ -110,7 +110,7 @@ end
         this.key_idx = 1
         this.src = src
         this.heading = heading
-        this.computed_shake_strengths = zero(Vec{NShakeModes, Float32})
+        this.computed_shake_strengths = zero(Vec{N_SHAKE_MODES, Float32})
     end
 
     function TICK()
@@ -133,7 +133,7 @@ function cab_move_forward(this::CabMovement, entity::Entity, world::World,
     local prev_key::CabMovementKeyframe
     if this.key_idx == 1
         prev_key = CabMovementKeyframe(zero(v3f), zero(Float32),
-                                       zero(Vec{NShakeModes, Float32}))
+                                       zero(Vec{N_SHAKE_MODES, Float32}))
     else
         prev_key = this.src.keyframes[this.key_idx - 1]
     end
@@ -200,11 +200,15 @@ end
 
         grid = get_component(world, GridManager)[1]
         drilled_entity = entity_at!(grid, this.pos_component.get_voxel_position())
+        #TODO: Code a DrillResponseComponent
         if isnothing(drilled_entity)
             @warn "Drilled into an empty spot! Something else destroyed it first?"
-        else
-            #TODO: Code a DrillResponseComponent
+        elseif drilled_entity isa BulkEntity
+            drilled_entity[1].destroy_at(drilled_entity[2])
+        elseif drilled_entity isa Entity
             remove_entity(world, drilled_entity)
+        else
+            error("Unexpected type: ", typeof(drilled_entity))
         end
     end
 
@@ -215,11 +219,11 @@ end
         # Shake strength will be randomly distributed among the different shake types.
         # I'm not sure how to perfectly distribute continuous numbers,
         #    but distributing discrete elements is easy.
-        shake_strengths = zero(Vec{NShakeModes, Float32})
+        shake_strengths = zero(Vec{N_SHAKE_MODES, Float32})
         N_SEGMENTS = 10
         rng = ConstPRNG(this.rng_seed)
         for i in 1:N_SEGMENTS
-            (bucket, rng) = rand(rng, 1:NShakeModes)
+            (bucket, rng) = rand(rng, 1:N_SHAKE_MODES)
             @set! shake_strengths[bucket] += @f32(1 / N_SEGMENTS)
         end
 
@@ -242,7 +246,7 @@ const FALL_SHAKE_CURVE = @f32(2.0)
     end
 
     finish_maneuver() = nothing
-    shake_strengths() = Vec{NShakeModes, Float32}(
+    shake_strengths() = Vec{N_SHAKE_MODES, Float32}(
         # Position-based shake is not used.
         0,
         # Rotation-based shake is based on current speed.
