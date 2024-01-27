@@ -85,17 +85,17 @@ So this should only be called from the level's Generator component.
 "
 function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock)::BulkEntity
     # Get or make the bulk grid element for rocks.
-    rocks = let found = get_component(world, RockBulkGridElement)
+    rocks = let found = get_component(world, RockBulkElements)
         if exists(found)
             found[1]
         else
             en = add_entity(world)
             add_component(en, DebugGuiVisuals_Rocks)
-            get_component(en, RockBulkGridElement)
+            get_component(en, RockBulkElements)
         end
     end
 
     grid_pos = convert(v3i, grid_pos)
-    rocks.create_at(grid_pos, data)
+    bulk_create_at(rocks, grid_pos, data)
     return (rocks, grid_pos)
 end

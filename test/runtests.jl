@@ -93,40 +93,12 @@ end
     @component TestGridElement {entitySingleton} {require: D8.GridElement} begin
         i::Int
     end
-
-    # "Associates a string with each grid element"
-    @component TestBulkGridElement<:D8.AbstractBulkGridElement {worldSingleton} begin
-        lookup::Dict{v3i, String}
-
-        function CONSTRUCT()
-            SUPER()
-            this.lookup = Dict{v3i, String}()
-        end
-
-        function create_at(i::v3i, s::String)
-            @bp_check(!haskey(this.lookup, i),
-                      "Trying to create string at location which already has it: ",
-                        i, " => '", this.lookup[i], "'")
-            this.lookup[i] = s
-            return nothing
-        end
-        function destroy_at(i::v3i)::String
-            @bp_check(haskey(this.lookup, i),
-                      "Trying to destroy nonexistent string at ", i)
-            deleted = this.lookup[i]
-            delete!(this.lookup, i)
-            return deleted
-        end
-
-        function data_at(i::v3i)::Optional{String}
-            return get(this.lookup, i, nothing)
-        end
-
-        is_passable(i::v3i) = true
-    end
-
     "Picks a value for the given test grid element"
     test_rule(idx::v3i)::Int = (idx.x * (17278 + idx.y)) ⊻ ~(idx.z)
+
+    "Associates a string with some grid elements"
+    TestBulkElements = D8.BulkElements{String}
+    D8.bulk_data_is_passable(::TestBulkElements, ::v3i, ::String) = true
 
     @component TestGenerator <: D8.GridGenerator begin
         generate(i::v3i) = let e = add_entity(world)
@@ -141,7 +113,7 @@ end
 
     generator = add_component(grid_entity, TestGenerator)
     grid = add_component(grid_entity, D8.GridManager)
-    bulk::TestBulkGridElement = add_component(grid_entity, TestBulkGridElement)
+    bulk::TestBulkElements = add_component(grid_entity, TestBulkElements)
 
     @test D8.chunk_at(grid, v3f(1, 2.3, 6)) === nothing
     @test D8.entity_at(grid, v3i(1, 2, 6)) === nothing
@@ -159,12 +131,11 @@ end
     @test D8.entity_at(grid, v3i(1, 2, 6)) === nothing
 
     # Add some bulk entities.
-    bulk.create_at(v3i(2, 4, 5), "2/4/5")
-    chunk.elements[D8.chunk_grid_idx(v3i(0, 0, 0), v3i(2, 4, 5))] = bulk
+    D8.add_bulk_entity!(grid, v3i(2, 4, 5), bulk, "2/4/5")
     @test !isa(D8.entity_at(grid, v3i(1, 4, 5)), D8.BulkEntity)
     @test !isa(D8.entity_at(grid, v3i(-4, 5, -20)), D8.BulkEntity)
     @test D8.entity_at(grid, v3i(2, 4, 5)) == (bulk, v3i(2, 4, 5))
-    @test bulk.data_at(v3i(2, 4, 5)) == "2/4/5"
+    @test D8.bulk_data_at(bulk, v3i(2, 4, 5)) == "2/4/5"
 
     @test D8.entity_at(grid, v3i(1, 3, 6)) isa Entity
     remove_component(grid_entity, chunk)

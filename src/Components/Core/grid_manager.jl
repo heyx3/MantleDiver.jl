@@ -7,30 +7,49 @@
 #=
 "
 Each grid cell can be occupied by a different entity.
-However, for things like rocks which are ubiquitous, this is inefficient.
-So you can also write a "bulk" grid entity which manages an unlimited set of simple cell objects.
+However, for ubiquitous things like rocks, this is very inefficient.
+So you can also write a "bulk" grid entity which manages an unlimited set of simple objects.
 
-Each type of bulk entity should be a world singleton.
+Only one bulk component can exist for each type of grid object.
+You should overload `bulk_data_is_passable` for your object data type.
 "
 =#
-#TODO: Make this generic over the bulk data type. Then add the bulk data lookup to this base class.
-@component AbstractBulkGridElement {abstract} begin
-    @promise create_at(grid_idx::v3i, in_data)::Nothing # Adds the given data to this grid
-    @promise destroy_at(grid_idx::v3i)::Optional # Returns the removed data
-
-    @promise data_at(grid_idx::v3i)::Optional # Gets the data currently in this grid, or 'nothing'
-    @promise is_passable(grid_idx::v3i)::Bool # Gets whether the given grid element,
-                                              #    assumed to be in this bulk, is passable.
+@component BulkElements{T} {worldSingleton} begin
+    lookup::Dict{v3i, T}
+    CONSTRUCT() = (this.lookup = Dict{v3i, T}())
 end
 
+function bulk_create_at(b::BulkElements{T}, grid_idx::v3i, new_data::T)::Nothing where {T}
+    @d8_assert(!haskey(b.lookup, grid_idx),
+               "Trying to create bulk ", T, " at location which already has one: ", grid_idx)
+    b.lookup[grid_idx] = new_data
+    return nothing
+end
+function bulk_destroy_at(b::BulkElements{T}, grid_idx::v3i)::T where {T}
+    @d8_assert(haskey(b.lookup, grid_idx),
+               "Trying to destroy nonexistent bulk ", T, " at ", grid_idx)
+    deleted = b.lookup[grid_idx]
+    delete!(b.lookup, grid_idx)
+    return deleted
+end
+function bulk_data_at(b::BulkElements{T}, grid_idx::v3i)::Optional{T} where {T}
+    return get(b.lookup, grid_idx, nothing)
+end
+function bulk_is_passable(b::BulkElements{T}, grid_idx::v3i)::Bool where {T}
+    return bulk_data_is_passable(b, grid_idx, bulk_data_at(b, grid_idx))
+end
+
+bulk_data_is_passable(bulk, grid_idx, data)::Bool = error("not implemented for ", typeof(bulk), " and ", typeof(data))
+
+
 "An element within a bulk entity, represented with its world-grid index"
-const BulkEntity{T<:AbstractBulkGridElement} = Tuple{T, v3i}
+const BulkEntity{B<:BulkElements} = Tuple{B, v3i}
 
 
 ##  GridGenerator  ##
 
 @component GridGenerator {abstract} {worldSingleton} begin
-    @promise generate(world_grid_idx::v3i)::Optional{Union{Entity, BulkEntity}}
+    @promise generate(world_grid_idx::v3i)::Optional{Union{Entity, BulkElements}}
 end
 
 
@@ -63,7 +82,7 @@ end
 
 @component GridChunk {require: GridGenerator} begin
     idx::v3i # Multiply by the chunk size to get the first grid index in this chunk
-    elements::ChunkElementGrid{Optional{Union{Entity, AbstractBulkGridElement}}}
+    elements::ChunkElementGrid{Optional{Union{Entity, BulkElements}}}
 
     function CONSTRUCT(idx::v3i)
         this.idx = idx
@@ -84,9 +103,9 @@ end
         for idx in 1:vsize(this.elements)
             element = this.elements[idx]
             if exists(element)
-                if element isa AbstractBulkGridElement
+                if element isa BulkElements
                     world_idx = (idx - Int32(1)) + (this.idx * CHUNK_SIZE)
-                    element.destroy_at(world_idx)
+                    bulk_destroy_at(element, world_idx)
                 else
                     remove_entity(world, element)
                 end
@@ -100,8 +119,9 @@ end
     end
 end
 
+#TODO: Remove if not used
 @inline chunk_region(ch::GridChunk) = Box3Di(
-    min = ch.idx * CHUNK_SIZE,
+    min = chunk_first_grid_idx(ch.idx),
     size = CHUNK_SIZE
 )
 
@@ -130,7 +150,7 @@ function get_chunk_entity(chunk::GridChunk, chunk_id::v3i, world_grid_idx::v3i):
     element = chunk.elements[local_grid_idx]
     if element isa Entity
         return element
-    elseif element isa AbstractBulkGridElement
+    elseif element isa BulkElements
         return (element, world_grid_idx)
     elseif isnothing(element)
         return nothing
@@ -188,7 +208,7 @@ function component_at!(gm::GridManager, world_grid_pos::Vec3, ::Type{T})::Option
     elseif entity isa Entity
         return get_component(entity, T)::Optional{T}
     elseif entity isa BulkEntity
-        data = entity[1].data_at(entity[2])
+        data = bulk_data_at(entity...)
         if data isa T
             return data
         else
@@ -199,7 +219,7 @@ end
 
 "Adds the given bulk-entity to the world"
 function add_bulk_entity!(gm::GridManager, world_grid_pos::Vec3,
-                          bulk::AbstractBulkGridElement, data)
+                          bulk::BulkElements{T}, data::T) where {T}
     world_grid_idx = grid_idx(world_grid_pos)
     chunk_id = chunk_idx(world_grid_idx)
     chunk_relative_idx = chunk_grid_idx(chunk_id, world_grid_idx)
@@ -207,7 +227,7 @@ function add_bulk_entity!(gm::GridManager, world_grid_pos::Vec3,
     chunk = chunk_at!(gm, world_grid_idx)
 
     chunk.elements[chunk_relative_idx] = bulk
-    bulk.create_at(world_grid_idx, data)
+    bulk_create_at(bulk, world_grid_idx, data)
 
     return nothing
 end
@@ -223,12 +243,12 @@ function remove_bulk_entity!(gm::GridManager, world_grid_pos::Vec3)::Nothing
     # Get the element at the grid position.
     chunk = gm.chunks[chunk_id]
     element = chunk.elements[local_grid_idx]
-    @bp_check(element isa AbstractBulkGridElement,
-              "Expected a bulk entity at ", world_grid_pos, " but got a ", typeof(element))
+    @bp_check(element isa BulkElements,
+              "Expected a bulk component at ", world_grid_pos, " but got a ", typeof(element))
 
     # Destroy it.
     chunk.elements[local_grid_idx] = nothing
-    element.destroy_at(world_grid_idx)
-    return nothing # Returning the destroyed data would be nice
+    bulk_destroy_at(element, world_grid_idx)
+    return nothing # Returning the destroyed data would be nice,
                    #    but creates unavoidable type-instability
 end

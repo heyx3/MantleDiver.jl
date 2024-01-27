@@ -54,7 +54,7 @@ function is_passable(gm::GridManager, world_grid_pos::Vec3)::Bool
         grid_el::GridElement = get_component(entity, GridElement)
         return !grid_el.is_solid
     elseif entity isa BulkEntity
-        return entity[1].is_passable(entity[2])
+        return bulk_is_passable(entity...)
     elseif isnothing(entity)
         return true
     else

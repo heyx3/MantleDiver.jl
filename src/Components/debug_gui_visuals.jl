@@ -90,11 +90,11 @@ const MINERAL_MAX_COLOR_POINT = @f32(1)
 const MINERAL_COLOR_DROPOFF = @f32(1.7)
 
 # "Draws the bulk of rocks"
-@component DebugGuiVisuals_Rocks <: DebugGuiVisuals {require: RockBulkGridElement} begin
-    bulk::RockBulkGridElement
+@component DebugGuiVisuals_Rocks <: DebugGuiVisuals {require: RockBulkElements} begin
+    bulk::RockBulkElements
     function CONSTRUCT()
         SUPER()
-        this.bulk = get_component(entity, RockBulkGridElement)
+        this.bulk = get_component(entity, RockBulkElements)
     end
     draw_order() = typemin(Int64)
     function visualize(data::DebugGuiRenderData)
@@ -110,7 +110,7 @@ const MINERAL_COLOR_DROPOFF = @f32(1.7)
             if voxel_pos[data.other_horizontal_axis] == data.horizontal_depth
                 world_rect = Box3Df(center=voxel_pos, size=one(v3f))
                 gui_rect = world_to_gui(world_rect, data)
-                rock = this.bulk.data_at(voxel_pos)
+                rock = bulk_data_at(this.bulk, voxel_pos)
                 if isnothing(rock)
                     continue
                 end
