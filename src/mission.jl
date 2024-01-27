@@ -17,6 +17,7 @@ mutable struct Mission
 
         world = ECS.World()
         grid = let entity = make_grid(world, MainGenerator,
+                                      rand(UInt32),
                                       PLAYER_START_POS,
                                       5, 0.39,
                                       3, 0.28, 2.4)

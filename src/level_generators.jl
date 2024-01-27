@@ -1,4 +1,5 @@
 @component MainGenerator <: GridGenerator begin
+    seed::UInt32
     player_start_pos::v3i
 
     gaps_scale::Float32 # Larger than 1
@@ -21,11 +22,15 @@
                     mineral_noise = perlin(
                         grid_pos / this.minerals_scale,
                         tuple(
-                            0xA3B1,
+                            0x7890a3b1,
+                            this.seed,
+                            # The mineral index is a very low number.
+                            # Spread it across an entire UInt32
+                            #    so we can spend less time warming up the PRNG.
                             UInt32(mineral_idx) |
-                            UInt32(mineral_idx << 9) |
-                            UInt32(mineral_idx << 19) |
-                            UInt32(mineral_idx << 29),
+                              UInt32(mineral_idx << 9) |
+                              UInt32(mineral_idx << 19) |
+                              UInt32(mineral_idx << 29),
                         ),
                         Val(PrngStrength.weak),
                         identity,
