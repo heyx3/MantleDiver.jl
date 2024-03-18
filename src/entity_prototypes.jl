@@ -83,7 +83,7 @@ end
 NOTE: Only registers the rock with the bulk grid entity, not with the chunks!
 So this should only be called from the level's Generator component.
 "
-function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock)::BulkEntity
+function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock)::BulkEntity{RockBulkElements}
     # Get or make the bulk grid element for rocks.
     rocks = let found = get_component(world, RockBulkElements)
         if exists(found)

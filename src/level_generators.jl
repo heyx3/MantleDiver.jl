@@ -9,7 +9,7 @@
     minerals_rarity::Float32 # Between 0 and 1
     minerals_concentration::Float32 # Exponent (more than 0, default is 1)
 
-    function generate(grid_pos::v3i)
+    function generate(grid_pos::v3i)::Optional{BulkElements}
         if sum(abs(grid_pos - this.player_start_pos)) <= 2
             return nothing
         elseif perlin(grid_pos / this.gaps_scale) < this.gaps_severity

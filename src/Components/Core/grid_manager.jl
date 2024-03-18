@@ -56,8 +56,6 @@ end
 ##   Chunk   ##
 
 const CHUNK_SIZE = v3i(8, 8, 8)
-const ChunkElementGrid{T} = SizedArray{Tuple{Int.(CHUNK_SIZE)...}, T, 3,
-                                       3, Array{T, 3}}
 
 "Gets the chunk covering a given grid postion"
 function chunk_idx(world_grid_pos::Vec3)::v3i
@@ -82,7 +80,7 @@ end
 
 @component GridChunk {require: GridGenerator} begin
     idx::v3i # Multiply by the chunk size to get the first grid index in this chunk
-    elements::ChunkElementGrid{Optional{Union{Entity, BulkElements}}}
+    elements::Array{Optional{Union{Entity, BulkElements}}, 3}
 
     function CONSTRUCT(idx::v3i)
         this.idx = idx
@@ -91,10 +89,12 @@ end
         # Fill in the chunk array using this world's generator.
         # Dispatch to a function where the generator type is known at compile-time.
         function generate_chunk(gen::T) where {T<:GridGenerator}
-            [gen.generate(first_world_idx + v3i(x, y, z) - Int32(1))
-                 for x in 1:CHUNK_SIZE.x,
-                     y in 1:CHUNK_SIZE.y,
-                     z in 1:CHUNK_SIZE.z]
+            Optional{Union{Entity, BulkElements}}[
+                gen.generate(first_world_idx + v3i(x, y, z) - Int32(1))
+                  for x in 1:CHUNK_SIZE.x,
+                      y in 1:CHUNK_SIZE.y,
+                      z in 1:CHUNK_SIZE.z
+            ]
         end
         this.elements = generate_chunk(get_component(entity, GridGenerator))
     end
@@ -118,12 +118,6 @@ end
         end
     end
 end
-
-#TODO: Remove if not used
-@inline chunk_region(ch::GridChunk) = Box3Di(
-    min = chunk_first_grid_idx(ch.idx),
-    size = CHUNK_SIZE
-)
 
 
 ##   Manager of chunks   ##

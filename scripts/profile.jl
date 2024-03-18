@@ -1,13 +1,19 @@
-using Profile, ProfileView
+#NOTE: You must 'include()' this from the REPL! Otherwise, the profile data won't show up.
+using InteractiveUtils
+if !isinteractive()
+    error("profile.jl can only be included from a REPL, not run automatically!")
+end
 
-cd(joinpath(@__DIR__, ".."))
-insert!(LOAD_PATH, 1, ".")
-
-# Configure the project for debugging.
-using Bplus; @using_bplus
+# Load this project.
+using Pkg
+Pkg.activate(joinpath(@__DIR__, ".."))
 using Drill8
-Drill8.d8_asserts_enabled() = true
-BplusTools.ECS.bp_ecs_asserts_enabled() = true
 
-# Profile the game.
+# Set up the profiler.
+using Profile, ProfileCanvas
+@warn "RUNNING THE GAME ONCE FOR PRECOMPILATION..."
+Drill8.julia_main()
+@warn "RUNNING THE PROFILER ONCE FOR PRECOMPILATION..."
+@profview map(identity, (i*i for i in 1:1000))
+
 @profview Drill8.julia_main()
