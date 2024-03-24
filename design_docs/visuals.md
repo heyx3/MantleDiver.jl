@@ -2,28 +2,73 @@ The interface is presented using very old-school-looking terminal ASCII graphics
 
 The 3D perspective view of the world is very low res, and each pixel is mapped to an ASCII char. The view starts out as black and white, but can be upgraded to grayscale and then color, which helps with mineral and threat identification.
 
-## Framebuffer
+## Shading
 
-Everything in the world, including the in-pod HUD, renders to an integer framebuffer.
-The framebuffer stores for each pixel, a "shade" representing a paletted color and a "density" representing a paletted ASCII char.
-It also stores a background "density" and "shade" for each character in a separate output texture.
-The background "density" does not map to an ASCII char like the foreground, but to a scale value for the background color.
-This leads to many more background colors than foreground colors.
+Everything in the world, including the in-pod HUD, renders to a small-resolution framebuffer in a special paletted format.
 
-The foreground data is drawn opaquely, with only the front-most surface affecting it.
-Background data is also drawn opaquely, but filtering out the front-most face with depth testing
-    so that the *second-most-front* surface draws to it.
+There are two textures in the framebuffer, representing the "foreground" (ASCII char) and "background" (the blank space behind each char).
+
+### Foreground
+
+The foreground pixel format contains the following values:
+
+* Integer "color" representing a paletted color
+* Integer "shape" representing a paletted ASCII char category.
+* Float "density" representing the space occupancy of the ASCII char.
+  * A density of 0 always maps to the space character, while larger values can map to different ASCII chars following the chosen "shape".
+* Bool "transparent" representing whether a nearby surface underneath this one has the ability to bleed through (more info below).
+
+Color and Shape will be packed into one 8-bit channel, as neither will get close to 255 different values.
+Let's say 4 bits for each (currently I have 6 different shapes).
+Density will be a hand-normalized float, using 7 bits of a UInt8 channel for itself.
+Transparency will be packed into the last bit of the Density channel.
+
+The texture format for these values will be RG_UInt_8.
+The foreground data is rendered using opaque blending -- only the front-most face gets to control the output.
+
+### Background
+
+The background pixel format contains the following values:
+
+* "color", using the same paletted color set as the foreground
+* "density", similar to the density value in the foreground but here is used to dim the paletted color.
+  * This means the background color is effectively 16-bit, while the foreground color is only 8-bit.
+  * In other words, the background color has more variety (particularly in lightness) to offset the lack of character detail.
+
+Unlike the foreground, the background has a pseudo-transparent effect: if a surface is marked as "transparent" and has the same depth as the foreground fragment, then it is discarded, allowing the next-closest surface behind it to write background values.
+
+To match the foreground color palette, density will be 7-bits, hand-normalized.
+Color will use the same number of bits as foreground (currently 4).
+So in total the background needs 11 bits of packed unsigned data, and we will use a R_UInt_16 format.
+
+### Shader output
+
+The "surface properties" output by a shader in this game, and later packed into the above framebuffer output depending on pass, are as follows:
+
+* Foreground Color, as a uint (not to go above a certain low value).
+  * If this surface is behind another transparent one, this is used as the Background Color instead.
+* Foreground Shape, as a uint (not to go above a certain low value).
+* Foreground Density, as a float from 0 to 1
+* Foreground Transparency, as a bool
+* Background Color, as a uint (not to go above a certain low value).
+  * If this surface is behind another transparent onoe, this value is replaced with Foreground Color.
+* Background Density, as a float from 0 to 1
 
 ### Render passes
 
 Keep in mind that resolution is purposefully low (and constant), so fragment performance is likely a non-issue.
 
 1. Pick a low resolution for rendering the world. It doesn't have to be square, but we might prefer it that way so that FOV is fixed and it's easier to make the in-pod HUD work right.
-2. Draw foreground using RG_8_Unorm, and write/test with depth buffer.
-3. Draw background using RG_8_Unorm, and write/test with a *different* depth buffer, while discarding a pixel if it has the same depth as the first depth buffer.
-4. Round the window resolution down to the nearest multiple of the foreground/background resolution, along each axis. Get a render target of this size.
-5. Draw into the render target, sampling from the foreground/background and then sampling from textures for the ASCII char pixels and shade color.
-6. Clear the screen to a particular background color, then draw the render target to it, shrinking to preserve its aspect ratio.
+2. Draw foreground, doing depth writes/tests with a depth texture.
+3. Draw background, doing depth writes/tests with a different depth *buffer* (doesn't need to be a sampleable texture), while reading the foreground depth texture to support the pseudo-transparency effect described above.
+4. Take the window resolution rounded down to the nearest multiple of the foreground/background resolution. To prevent stretching, take the side with a larger multiple and recalculate resolution to use the smaller multiple. Get a render target of this size.
+5. Draw into the render target, sampling from the foreground/background to determine char and color, then sampling from an ASCII char texture.
+6. Clear the screen to a particular background color (corrected aspect ratio will leave blank areas).
+7. Draw the render target to the screen, shrinking to preserve its aspect ratio.
+
+In debug builds, the last part of drawing to the screen can be replaced
+    by displaying the game texture within a Dear ImGUI window,
+    among other debug views of the game.
 
 ## Rocks
 
@@ -31,4 +76,5 @@ Rock is colored based on the proportions of minerals it contains.
 The rock surface color is not an overall blend of mineral colors, but a noisy speckle of the colors,
     where each pixel picks one of its minerals with a weighted-random chance.
 
-Each mineral's shade has a distinct hue, mildly-varying lightness, and similar saturation.
+Each mineral's color has a distinct hue, mildly-varying lightness, and similar saturation.
+Each mineral also has its own choice of foreground shape.
