@@ -3,6 +3,8 @@ grid_idx(world_pos::Vec)::VecT{Int32} = round(Int32, world_pos)
 @inline is_min_half_of_grid_cell(f::Real) = (fract(f) >= convert(typeof(f), 0.5))
 is_min_half_of_grid_cell(p::Vec) = map(is_min_half_of_grid_cell, p)
 
+world_pos_from_grid_idx(idx::Vec{3, <:Integer})::v3f = convert(v3f, idx)
+
 
 const GridDirection = BplusApp.GL.E_CubeFaces
 const GridDirections = BplusApp.GL.CubeFaces

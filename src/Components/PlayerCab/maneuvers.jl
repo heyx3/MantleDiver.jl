@@ -173,17 +173,23 @@ end
 
 ##   Drilling   ##
 
+
 @component CabDrill <: Maneuver begin
     original_pos::v3f
+    drilling_pos::v3i
 
     dir::GridDirection
     rng_seed::Float32
 
+    finished_drilling::Bool # So that we know on DESTRUCT whether drilling succeeded
+
     function CONSTRUCT(dir::GridDirection, rng_seed::Float32)
         SUPER(DRILL_DURATION_SECONDS)
         this.original_pos = this.pos_component.pos
+        this.drilling_pos = grid_idx(this.original_pos) + grid_vector(dir, Int32)
         this.dir = dir
         this.rng_seed = rng_seed
+        this.finished_drilling = false
     end
 
     function TICK()
@@ -193,22 +199,40 @@ end
 
         this.pos_component.pos = this.original_pos + movement
     end
-    function finish_maneuver()
-        delta = zero(v3f)
-        @set! delta[grid_axis(this.dir)] = grid_sign(this.dir)
-        this.pos_component.pos = this.original_pos + delta
+    function DESTRUCT(is_world_dying::Bool)
+        # If the drilling never finished, notify the drill target that we are canceling.
+        if !is_world_dying && !this.finished_drilling
+            grid = get_component(world, GridManager)[1]
+            drilled_entity = entity_at(grid, this.drilling_pos)
+            if isnothing(drilled_entity)
+                @error "Was drilling (then canceled) into an empty space! At $(this.drilling_pos)"
+            else
+                drill_response = get_drill_response(drilled_entity)
+                if isnothing(drill_response)
+                    @error "Was drilling (then canceled) into a grid element (at $(this.drilling_pos)) that doesn't exist or has no DrillResponse!"
+                else
+                    drill_response.cancel_drilling(this.drilling_pos, entity)
+                end
+            end
+        end
+    end
 
+    function finish_maneuver()
+        this.pos_component.pos = world_pos_from_grid_idx(this.drilling_pos)
+        this.finished_drilling = true
+
+        # Tell the drilled object that we finished.
         grid = get_component(world, GridManager)[1]
-        drilled_entity = entity_at(grid, this.pos_component.get_voxel_position())
-        #TODO: Code a DrillResponseComponent
+        drilled_entity = entity_at(grid, this.drilling_pos)
         if isnothing(drilled_entity)
-            @warn "Drilled into an empty spot! Something else destroyed it first?"
-        elseif drilled_entity isa BulkEntity
-            remove_bulk_entity!(grid, this.pos_component.get_voxel_position())
-        elseif drilled_entity isa Entity
-            remove_entity(world, drilled_entity)
+            @error "Drilled into an empty space! At $(this.drilling_pos)"
         else
-            error("Unexpected type: ", typeof(drilled_entity))
+            drill_response = get_drill_response(drilled_entity)
+            if isnothing(drill_response)
+                @error "Drilled into a grid element (at $(this.drilling_pos)) that doesn't exist or has no DrillResponse!"
+            else
+                drill_response.finish_drilling(this.drilling_pos, entity)
+            end
         end
     end
 

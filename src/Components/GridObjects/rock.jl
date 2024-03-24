@@ -19,3 +19,9 @@ end
 
 const RockBulkElements = BulkElements{Rock}
 bulk_data_is_passable(::RockBulkElements, ::v3i, ::Rock) = false
+
+
+"A rock's response to being drilled"
+@component RockDrillResponse <: DrillResponse {require: RockBulkElements} begin
+    # Default behavior is fine
+end

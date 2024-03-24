@@ -1,4 +1,4 @@
-@component GridElement {entitySingleton} {require: DiscretePosition} begin
+@component GridElement {entitySingleton} {require: DiscretePosition, DrillResponse} begin
     # Whether this element blocks movement.
     is_solid::Bool
 

@@ -65,14 +65,26 @@ function player_start_moving(player::Entity,
 end
 function player_start_drilling(player::Entity,
                                direction::GridDirection,
-                               fx_seed::Float32 = rand(Float32))
-    @d8_assert(
-        exists(component_at!(get_component(player.world, GridManager)[1],
-                             get_voxel_position(player) + grid_vector(direction, Int32),
-                             Rock)),
-        "Trying to do an illegal drill: ",
-          "from ", get_voxel_position(player), " along direction ", direction
-    )
+                               fx_seed::Float32 = rand(Float32)
+                              )::Optional{CabDrill}
+    grid = get_component(player.world, GridManager)[1]
+    grid_pos = get_voxel_position(player) + grid_vector(direction, Int32)
+    grid_entity = entity_at!(grid, grid_pos)
+    if isnothing(grid_entity)
+        @error "Tried to drill empty space at $grid_pos. Drilling will not happen."
+        return nothing
+    end
+
+    drill_response = get_drill_response(grid_entity)
+    if isnothing(drill_response)
+        @error "Grid element at $grid_pos doesn't exist or has no DrillResponse! Drilling will not happen."
+        return nothing
+    end
+    if !drill_response.can_be_drilled(grid_pos, player)
+        return nothing
+    end
+    drill_response.start_drilling(grid_pos, player)
+
     return add_component(player, CabDrill, direction, fx_seed)
 end
 
@@ -91,6 +103,7 @@ function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock)::BulkEnt
         else
             en = add_entity(world)
             add_component(en, DebugGuiVisuals_Rocks)
+
             get_component(en, RockBulkElements)
         end
     end

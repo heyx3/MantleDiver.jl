@@ -32,6 +32,7 @@ end
 
 include("Components/Core/transforms.jl")
 include("Components/Core/grid_data.jl")
+include("Components/Core/grid_event_responders.jl")
 include("Components/Core/grid_manager.jl")
 include("Components/Core/grid_element.jl")
 

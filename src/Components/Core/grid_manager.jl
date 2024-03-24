@@ -4,17 +4,15 @@
 # The chunks, manager, and generator all live on a single entity.
 
 
-#=
-"
+"""
 Each grid cell can be occupied by a different entity.
 However, for ubiquitous things like rocks, this is very inefficient.
 So you can also write a "bulk" grid entity which manages an unlimited set of simple objects.
 
 Only one bulk component can exist for each type of grid object.
 You should overload `bulk_data_is_passable` for your object data type.
-"
-=#
-@component BulkElements{T} {worldSingleton} begin
+"""
+@component BulkElements{T} {worldSingleton} {require: DrillResponse} begin
     lookup::Dict{v3i, T}
     CONSTRUCT() = (this.lookup = Dict{v3i, T}())
 end
@@ -39,7 +37,11 @@ function bulk_is_passable(b::BulkElements{T}, grid_idx::v3i)::Bool where {T}
     return bulk_data_is_passable(b, grid_idx, bulk_data_at(b, grid_idx))
 end
 
-bulk_data_is_passable(bulk, grid_idx, data)::Bool = error("not implemented for ", typeof(bulk), " and ", typeof(data))
+bulk_data_is_passable(bulk, grid_idx, data)::Bool = error(
+    "Not implemented: bulk_data_is_passable(",
+    "::", typeof(bulk), ", ::", typeof(grid_idx), ", ::", typeof(data),
+    ")"
+)
 
 
 "An element within a bulk entity, represented with its world-grid index"
