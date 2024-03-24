@@ -35,7 +35,11 @@ The background pixel format contains the following values:
   * This means the background color is effectively 16-bit, while the foreground color is only 8-bit.
   * In other words, the background color has more variety (particularly in lightness) to offset the lack of character detail.
 
-Unlike the foreground, the background has a pseudo-transparent effect: if a surface is marked as "transparent" and has the same depth as the foreground fragment, then it is discarded, allowing the next-closest surface behind it to write background values.
+Unlike the foreground, the background has a pseudo-transparent effect: if a surface is marked as "transparent" and has the same depth as the foreground fragment, then it is discarded, allowing the next-closest surface behind it to write background values. This next-closest surface is referred to as the "partially-occluded" surface.
+
+The background color written by a partially-occluded surface will use that surface's *foreground* color/density if the surface is itself opaque, or its usual background color/density if transparent.
+This is a wholly-artistic choice which may change in the future.
+The idea is that transparent surfaces are less about fine details and more about broad color?
 
 To match the foreground color palette, density will be 7-bits, hand-normalized.
 Color will use the same number of bits as foreground (currently 4).
@@ -46,12 +50,10 @@ So in total the background needs 11 bits of packed unsigned data, and we will us
 The "surface properties" output by a shader in this game, and later packed into the above framebuffer output depending on pass, are as follows:
 
 * Foreground Color, as a uint (not to go above a certain low value).
-  * If this surface is behind another transparent one, this is used as the Background Color instead.
 * Foreground Shape, as a uint (not to go above a certain low value).
 * Foreground Density, as a float from 0 to 1
 * Foreground Transparency, as a bool
 * Background Color, as a uint (not to go above a certain low value).
-  * If this surface is behind another transparent onoe, this value is replaced with Foreground Color.
 * Background Density, as a float from 0 to 1
 
 ### Render passes
@@ -69,6 +71,19 @@ Keep in mind that resolution is purposefully low (and constant), so fragment per
 In debug builds, the last part of drawing to the screen can be replaced
     by displaying the game texture within a Dear ImGUI window,
     among other debug views of the game.
+
+## Lighting
+
+Lights are direct-lighting only (finer detail, for such a low-fidelity renderer, would be at best useless and at worst confusing). Each light has a shadowmap, using a custom format containing the following values:
+
+1. Distance from the light to the nearest transparent occluder.
+2. Density of that first transparent occluder.
+3. Distance at which the incoming light is 0 either due to many transparent occluders or a single opaque one.
+
+This allows for partial light attenuation due to a single layer of transparent material such as smoke, followed by a total attenuation further away.
+Intermediary attenuation can be calculated for distances in-between these thresholds.
+
+In this renderer, we can probably get away with pretty low-res shadow-maps.
 
 ## Rocks
 
