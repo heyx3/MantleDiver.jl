@@ -132,6 +132,8 @@ mutable struct WorldViewport
     foreground_target::Target
     background_target::Target
 
+    resolution::v2i
+
     function Framebuffer(resolution::v2i)
         foreground = Texture(FOREGROUND_FORMAT, resolution)
         foreground_depth = Texture(DEPTH_FORMAT, resolution)
@@ -144,7 +146,8 @@ mutable struct WorldViewport
 
         return new(foreground, background,
                    foreground_depth,
-                   foreground_target, background_target)
+                   foreground_target, background_target,
+                   resolution=resolution)
     end
 end
 function Base.close(wv::WorldViewport)
@@ -170,6 +173,15 @@ The callback should take one argument, the `E_RenderPass`,
 function run_render_passes(viewport::WorldViewport,
                            callback_draw_world,
                            to_screen::Bool)
+    GL.set_render_state(GL.RenderState(
+        depth_write=true,
+        depth_test=GL.ValueTests.less_than,
+        viewport=Math.Box2Di(
+            min=v2i(1, 1),
+            size=viewport.resolution
+        ),
+        cull_mode=GL.FaceCullModes.backwards
+    ))
     GL.set_depth_test(GL.ValueTests.less_than)
     GL.set_depth_writes(true)
     GL.set_blending(GL.make_blend_opaque(GL.BlendStateRGB))

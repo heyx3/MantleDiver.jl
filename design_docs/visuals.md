@@ -72,7 +72,7 @@ In debug builds, the last part of drawing to the screen can be replaced
     by displaying the game texture within a Dear ImGUI window,
     among other debug views of the game.
 
-## Lighting
+### Lighting
 
 Lights are direct-lighting only (finer detail, for such a low-fidelity renderer, would be at best useless and at worst confusing). Each light has a shadowmap, using a custom format containing the following values:
 
@@ -85,7 +85,9 @@ Intermediary attenuation can be calculated for distances in-between these thresh
 
 In this renderer, we can probably get away with pretty low-res shadow-maps.
 
-## Rocks
+I'm not sure yet of the right way to apply light/shadows.
+
+### Rocks
 
 Rock is colored based on the proportions of minerals it contains.
 The rock surface color is not an overall blend of mineral colors, but a noisy speckle of the colors,
@@ -93,3 +95,8 @@ The rock surface color is not an overall blend of mineral colors, but a noisy sp
 
 Each mineral's color has a distinct hue, mildly-varying lightness, and similar saturation.
 Each mineral also has its own choice of foreground shape.
+
+### FX
+
+* We could create an interesting distortion effect by switching the char atlas lookup texture (which maps a Shape/Density pair to the UV rect for the corresponding char) to use linear instead of clamp sampling. This might be useful for damage or mysterious environmental objects.
+* Smoke would look very cool, we should think about how to implement it (many small billboards? Volumetric cube?)

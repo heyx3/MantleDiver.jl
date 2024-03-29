@@ -30,8 +30,7 @@ macro shout(data...)
 end
 
 
-include("assets.jl")
-
+include("Renderer/assets.jl")
 include("Renderer/framebuffer.jl")
 
 include("Components/Core/transforms.jl")
