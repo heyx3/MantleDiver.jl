@@ -2,8 +2,8 @@ module Drill8
 
 using Random, Setfield
 
-using CImGui, GLFW, CSyntax,
-      StaticArrays
+using CImGui, GLFW, FreeType, ImageIO, FileIO,
+      CSyntax, StaticArrays
 
 using Bplus
 @using_bplus
@@ -17,7 +17,7 @@ const PI2 = Float32(2π)
 
 "
 Prints the current file and line, along with any data you pass in.
-Intended to help pin down crashes that don't leave a clear stack trace.
+Helps pin down crashes that don't leave a clear stack trace.
 "
 macro shout(data...)
     return quote
@@ -50,14 +50,22 @@ include("entity_prototypes.jl")
 include("level_generators.jl")
 include("mission.jl")
 
-include("Hud/windows.jl")
-
+include("debug_gui_widgets.jl")
+@bp_enum(DebugGuiTab,
+    game,
+    assets
+)
+@bp_enum(DebugGuiSpeed,
+    play,
+    pause,
+    fast_forward
+)
 
 
 function julia_main()::Cint
     @game_loop begin
         INIT(
-            v2i(1280, 720), "Drill8"
+            v2i(1280, 770), "Drill8"
         )
 
         SETUP = begin
@@ -66,19 +74,15 @@ function julia_main()::Cint
                 )
                 #, seed = 0x12345
             )
+            assets = Assets()
 
-            window_debug_view_x = create_window_debug_view(mission, 1)
-            window_debug_view_y = create_window_debug_view(mission, 2)
-            window_maneuvers = create_window_maneuvers(mission)
-            ALL_WINDOWS = [ window_debug_view_x, window_debug_view_y, window_maneuvers ]
-
-            # Size each HUD window in terms of the overall window size.
-            function size_window_proportionately(uv_space::Box2Df)
-                local window_size::v2i = get_window_size(LOOP.context)
-                local pos::v2f = window_size * min_inclusive(uv_space)
-                w_size = window_size * size(uv_space)
-                CImGui.SetNextWindowPos(CImGui.ImVec2(pos...))
-                CImGui.SetNextWindowSize(CImGui.ImVec2(w_size...))
+            # In debug mode provide various GUI widgets,
+            #    one of which will contain the rendered scene.
+            @d8_debug begin
+                debug_gui = DebugGui()
+                current_tab::E_DebugGuiTab = DebugGuiTab.game
+                current_speed::E_DebugGuiSpeed = DebugGuiSpeed.play
+                fast_forward_speed::Int = 2
             end
         end
 
@@ -87,22 +91,85 @@ function julia_main()::Cint
                 break
             end
 
-            # Update game logic.
-            if !tick!(mission, LOOP.delta_seconds)
-                break
+            # Tick the mission, and quit if it ends.
+            continue_mission::Bool = if @d8_debug
+                if current_speed == DebugGuiSpeed.play
+                    tick!(mission, LOOP.delta_seconds)
+                elseif current_speed == DebugGuiSpeed.pause
+                    true
+                elseif current_speed == DebugGuiSpeed.fast_forward
+                    b = true
+                    for i in 1:fast_forward_speed
+                        b |= tick!(mission, LOOP.delta_seconds)
+                        (!b) && break
+                    end
+                    b
+                else
+                    error("Unhandled case: ", current_speed)
+                end
+            else
+                tick!(mission, LOOP.delta_seconds)
             end
+            (!continue_mission) && break
 
-            # Draw the hud.
-            size_window_proportionately(Box2Df(min=Vec(0.01, 0.01), max=Vec(0.245, 0.99)))
-                tick!(window_debug_view_x)
-            size_window_proportionately(Box2Df(min=Vec(0.255, 0.01), max=Vec(0.49, 0.99)))
-                tick!(window_debug_view_y)
-            size_window_proportionately(Box2Df(min=Vec(0.51, 0.01), max=Vec(0.99, 0.99)))
-                gui_with_padding(() -> tick!(window_maneuvers), CImGui.ImVec2(20, 20))
+            # Draw the game.
+            if !@d8_debug
+                GL.clear_screen(vRGBAf(1, 0, 1, 0))
+                #TODO: Render the world normally.
+            else
+                screen_size = convert(v2f, GL.get_window_size())
+                CImGui.SetNextWindowPos(v2i(0, 0))
+                CImGui.SetNextWindowSize(screen_size)
+                GUI.gui_window("#MainWnd", C_NULL, CImGui.LibCImGui.ImGuiWindowFlags_NoDecoration) do
+                    # Draw the tabs.
+                    gui_tab_views("#DebugTabs") do
+
+                        gui_tab_item("Flat Game View") do
+                            game_view_tab_region = Box2Df(
+                                #TODO Handle scroll offset, then move this calculation into a B+ function
+                                min = convert(v2f, CImGui.GetCursorPos()) -
+                                        convert(v2f, CImGui.GetWindowPos()),
+                                size = convert(v2f, CImGui.GetContentRegionAvail())
+                            )
+                            game_view_area = Box2Df(
+                                min=min_inclusive(game_view_tab_region),
+                                size=size(game_view_tab_region) * v2f(1, 0.8)
+                            )
+
+                            CImGui.Dummy(size(game_view_area)...)
+                            gui_debug_game_views(game_view_area, mission, debug_gui)
+
+                            gui_debug_maneuvers(mission, debug_gui)
+                        end
+
+                        gui_tab_item("Assets") do
+                            function show_tex(name::String, tex::GL.Texture)
+                                handle = GUI.gui_tex_handle(tex)
+                                size::v2u = GL.tex_size(tex)
+
+                                # If the texture is very small, blow it up.
+                                MIN_LENGTH = Float32(128)
+                                scale_up_ratio = MIN_LENGTH / min(size)
+                                draw_size::v2f = if scale_up_ratio > 1
+                                    size * scale_up_ratio
+                                else
+                                    size
+                                end
+
+                                CImGui.Text(name * " ($(size.x)x$(size.y))")
+                                CImGui.Image(handle, draw_size)
+                                CImGui.Spacing()
+                            end
+                            show_tex("Char Atlas", assets.chars_atlas)
+                            show_tex("Char UV Lookup", assets.chars_atlas_lookup)
+                        end
+                    end
+                end
+            end
         end
 
         TEARDOWN = begin
-            close.(ALL_WINDOWS)
+            close(assets)
         end
     end
     return 0

@@ -147,7 +147,7 @@ mutable struct WorldViewport
         return new(foreground, background,
                    foreground_depth,
                    foreground_target, background_target,
-                   resolution=resolution)
+                   resolution)
     end
 end
 function Base.close(wv::WorldViewport)
@@ -173,37 +173,37 @@ The callback should take one argument, the `E_RenderPass`,
 function run_render_passes(viewport::WorldViewport,
                            callback_draw_world,
                            to_screen::Bool)
-    GL.set_render_state(GL.RenderState(
+    game_render_state = GL.RenderState(
         depth_write=true,
         depth_test=GL.ValueTests.less_than,
         viewport=Math.Box2Di(
             min=v2i(1, 1),
             size=viewport.resolution
         ),
-        cull_mode=GL.FaceCullModes.backwards
-    ))
-    GL.set_depth_test(GL.ValueTests.less_than)
-    GL.set_depth_writes(true)
-    GL.set_blending(GL.make_blend_opaque(GL.BlendStateRGB))
+        cull_mode=GL.FaceCullModes.backwards,
+        blend_mode = (rgb=GL.make_blend_opaque(GL.BlendStateRGB),
+                      alpha=GL.make_blend_opaque(GL.BlendStateAlpha))
+    )
+    GL.with_render_state(game_render_state) do
+        # Draw foreground:
+        GL.target_clear(viewport.foreground_target,
+                        vRGBAu(Val(~zero(UInt32))),
+                        1)
+        GL.target_clear(viewport.foreground_target,
+                        vRGBAu(Val(~zero(UInt32))),
+                        2)
+        GL.target_clear(viewport.foreground_target, Float32(1))
+        GL.target_activate(viewport.foreground_target)
+        callback_draw_world(RenderPass.foreground)
 
-    # Draw foreground:
-    GL.target_clear(viewport.foreground_target,
-                    vRGBAu(Val(~zero(UInt32))),
-                    1)
-    GL.target_clear(viewport.foreground_target,
-                    vRGBAu(Val(~zero(UInt32))),
-                    2)
-    GL.target_clear(viewport.foreground_target, Float32(1))
-    GL.target_activate(viewport.foreground_target)
-    callback_draw_world(RenderPass.foreground)
-
-    # Draw background:
-    GL.target_clear(viewport.background_target,
-                    vRGBAu(Val(~zero(UInt32))),
-                    1)
-    GL.target_clear(viewport.background_target, Float32(1))
-    GL.target_activate(viewport.background_target)
-    callback_draw_world(RenderPass.background)
+        # Draw background:
+        GL.target_clear(viewport.background_target,
+                        vRGBAu(Val(~zero(UInt32))),
+                        1)
+        GL.target_clear(viewport.background_target, Float32(1))
+        GL.target_activate(viewport.background_target)
+        callback_draw_world(RenderPass.background)
+    end
 
     #TODO: Render ascii characters
 
