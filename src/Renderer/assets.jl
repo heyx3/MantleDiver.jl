@@ -299,8 +299,8 @@ function Assets()
     )
 
     palette = FileIO.load(joinpath(ASSETS_FOLDER, FILE_NAME_PALETTE))
-    palette = convert_pixel.(palette, vRGBu8)
-    palette_resolution::v2i = vsize(palette, true_order=true)
+    palette = convert_pixel.(palette', vRGBu8)
+    palette_resolution::v2i = vsize(palette)
     @d8_assert(palette_resolution.y == 1,
                "Palette should be Nx1 resolution, got ", palette_resolution)
     palette_tex = GL.Texture(
@@ -310,6 +310,11 @@ function Assets()
             GL.SimpleFormatBitDepths.B8
         ),
         palette
+        ;
+        sampler = GL.TexSampler{2}(
+            wrapping=GL.WrapModes.clamp,
+            pixel_filter=GL.PixelFilters.rough
+        )
     )
 
     return Assets(ft_lib, font_face,

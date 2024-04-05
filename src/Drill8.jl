@@ -124,7 +124,7 @@ function julia_main()::Cint
                     # Draw the tabs.
                     gui_tab_views("#DebugTabs") do
 
-                        gui_tab_item("Flat Game View") do
+                        gui_tab_item("Game View 2D") do
                             game_view_tab_region = Box2Df(
                                 #TODO Handle scroll offset, then move this calculation into a B+ function
                                 min = convert(v2f, CImGui.GetCursorPos()) -
@@ -162,6 +162,7 @@ function julia_main()::Cint
                             end
                             show_tex("Char Atlas", assets.chars_atlas)
                             show_tex("Char UV Lookup", assets.chars_atlas_lookup)
+                            show_tex("Palette", assets.palette)
                         end
                     end
                 end
