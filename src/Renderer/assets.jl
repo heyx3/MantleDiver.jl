@@ -4,97 +4,6 @@ const FILE_NAME_FONT = "JetBrainsMono-Bold.ttf"
 const FILE_NAME_PALETTE = "Palette.png"
 
 
-@bp_enum(ShapeType,
-    wide, tall,
-    round, cross, block,
-    unusual
-)
-"Not including the space character which is implicitly at the min density of every shape"
-const ASCII_CHARS_BY_SHAPE_THEN_DENSITY = Dict(
-    #NOTE: Preview the look of these by setting your editor to use the game font
-    ShapeType.round => [
-        '•', # \bullet
-        '¤',
-        'o',
-        '○',
-        '*',
-        '®',
-        'ø', # \o
-        '⊝', # \circledash
-        '0',
-        '@',
-    ],
-    ShapeType.wide => [
-        '-',
-        '¬', # \neg
-        '~',
-        '∾', # \lazysinv
-        '÷', # \div
-        '±', # \pm
-        '=',
-        '≡', # \equiv
-        '≣', # \Equiv
-    ],
-    ShapeType.tall => [
-        ':',
-        ';',
-        '¦', # \brokenbar
-        'i',
-        'j',
-        '!',
-        '|',
-        '1',
-        'I',
-        '¶',
-        '║',
-    ],
-    ShapeType.cross => [
-        '›', # \guilsinglright
-        '»',
-        '×', # \times
-        '+',
-        'x',
-        '‡', # \ddagger
-        'X',
-        '¼',
-        'Ž', # Z\check
-        '%',
-        '#', 
-        '�',
-    ],
-    ShapeType.block => [
-        '⌷',
-        'm',
-        '░', # \blockqtrshaded
-        '8',
-        '▒', # \blockhalfshaded
-        'M',
-        '■', # \blacksquare
-        '▓', # \blockthreeqtrshaded
-        '█', # \blockfull
-    ],
-    ShapeType.unusual => [
-        '∘', # \circ
-        '⋯', # \cdots
-        '≗', # \circeq
-        'a',
-        'æ', # \ae
-        '¢',
-        'π', # \pi
-        'Þ', # \TH
-        '$',
-        # 'ℵ', # \aleph  not supported in this font :(
-        '§', # \S
-        '€', # \euro
-        'ß', # \ss
-        '&',
-        'G',
-        'Ä', # A\ddot
-    ],
-)
-"A fallback when an invalid character is rendered. Should not match any other character."
-const ASCII_ERROR_CHAR = '?'
-
 
 "Loads all necessary assets from disk"
 mutable struct Assets
@@ -112,6 +21,8 @@ mutable struct Assets
     char_pixel_size::v2i
 
     palette::Texture
+
+    shader_render_chars::Program
 end
 
 function Assets()
@@ -147,11 +58,11 @@ function Assets()
     # Build a matrix of char data, to build the density_chars_lookup.
     # Remember to put the space character behind each shape's list of ASCII chars!
     max_density = 1 + maximum(length.(values(ASCII_CHARS_BY_SHAPE_THEN_DENSITY)))
-    n_shapes = length(ShapeType.instances())
+    n_shapes = length(CharShapeType.instances())
     chars_atlas_lookup = Matrix{vRGBAf}(undef, reverse(Vec(n_shapes, max_density))...)
     for density in 1:max_density
         for shape in 1:n_shapes
-            shape_enum = ShapeType.from(shape - 1)
+            shape_enum = CharShapeType.from(shape - 1)
             by_density = ASCII_CHARS_BY_SHAPE_THEN_DENSITY[shape_enum]
             char = if density == 1
                 ' '
@@ -317,15 +228,52 @@ function Assets()
         )
     )
 
+    shader_render_chars = Bplus.GL.bp_glsl_str("""
+        #START_VERTEX
+            in vec2 vIn_pos;
+            out vec2 vOut_uv;
+            void main() {
+                gl_Position = vec4(vIn_pos, 0.5, 1.0);
+                vOut_uv = 0.5 + (0.5 * vIn_pos);
+            }
+
+        #START_FRAGMENT
+            in vec2 vOut_uv;
+            out vec4 vOut_color;
+
+            $SHADER_CODE_FRAMEBUFFER_DATA
+            $UBO_CODE_FRAMEBUFFER_DATA
+
+            $UBO_CODE_CHAR_RENDERING
+
+            void main() {
+                MaterialSurface surface;
+                vec2 charUV;
+                readFramebuffer(vOut_uv, surface, charUV);
+
+                float charA = readChar(surface.foregroundShape, surface.foregroundDensity, charUV);
+
+                vec3 foregroundColor = readColor(surface.foregroundColor);
+                vec3 backgroundColor = readColor(surface.backgroundColor) *
+                                         surface.backgroundDensity;
+
+                vOut_color = vec4(mix(backgroundColor, foregroundColor, charA),
+                                  1.0);
+            }
+    """)
+
     return Assets(ft_lib, font_face,
                   chars_atlas_lookup_tex, chars_atlas_tex,
                   v2i(CHAR_PIXEL_SIZE, CHAR_PIXEL_SIZE),
-                  palette_tex)
+                  palette_tex,
+                  shader_render_chars)
 end
 
 function Base.close(a::Assets)
     close(a.chars_atlas_lookup)
     close(a.chars_atlas)
+    close(a.palette)
+    close(a.shader_render_chars)
 
     @c FT_Done_Face(a.chars_font)
     @c FT_Done_FreeType(a.ft_lib)

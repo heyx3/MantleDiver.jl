@@ -63,10 +63,9 @@ Keep in mind that resolution is purposefully low (and constant), so fragment per
 1. Pick a low resolution for rendering the world. It doesn't have to be square, but we might prefer it that way so that FOV is fixed and it's easier to make the in-pod HUD work right.
 2. Draw foreground, doing depth writes/tests with a depth texture.
 3. Draw background, doing depth writes/tests with a different depth *buffer* (doesn't need to be a sampleable texture), while reading the foreground depth texture to support the pseudo-transparency effect described above.
-4. Take the window resolution rounded down to the nearest multiple of the foreground/background resolution. To prevent stretching, take the side with a larger multiple and recalculate resolution to use the smaller multiple. Get a render target of this size.
-5. Draw into the render target, sampling from the foreground/background to determine char and color, then sampling from an ASCII char texture.
-6. Clear the screen to a particular background color (corrected aspect ratio will leave blank areas).
-7. Draw the render target to the screen, shrinking to preserve its aspect ratio.
+4. Take the window resolution rounded down to the nearest multiple of the foreground/background resolution. To prevent stretching, take the side with a larger multiple and recalculate resolution to use the smaller multiple.
+5. Clear the screen to a particular background color (corrected aspect ratio will leave blank areas).
+6. Draw a quad of the screen size calculated in 4, sampling from the foreground/background to determine char and color, then from the rendered ASCII chars.
 
 In debug builds, the last part of drawing to the screen can be replaced
     by displaying the game texture within a Dear ImGUI window,

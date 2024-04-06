@@ -30,27 +30,30 @@ macro shout(data...)
 end
 
 
-include("Renderer/assets.jl")
 include("Renderer/framebuffer.jl")
+include("Renderer/chars.jl")
+include("Renderer/assets.jl")
+include("Renderer/world_viewport.jl")
 
 include("Components/Core/transforms.jl")
 include("Components/Core/grid_data.jl")
 include("Components/Core/grid_event_responders.jl")
 include("Components/Core/grid_manager.jl")
 include("Components/Core/grid_element.jl")
+include("Components/Core/debug_gui_visuals.jl")
 
 include("Components/GridObjects/rock.jl")
 
 include("Components/PlayerCab/data.jl")
 include("Components/PlayerCab/maneuvers.jl")
-
-include("Components/debug_gui_visuals.jl")
+include("Components/PlayerCab/rendering.jl")
 
 include("entity_prototypes.jl")
 include("level_generators.jl")
 include("mission.jl")
 
 include("debug_gui_widgets.jl")
+
 @bp_enum(DebugGuiTab,
     game,
     assets
@@ -83,6 +86,7 @@ function julia_main()::Cint
                 current_tab::E_DebugGuiTab = DebugGuiTab.game
                 current_speed::E_DebugGuiSpeed = DebugGuiSpeed.play
                 fast_forward_speed::Int = 2
+                min_asset_tex_length::Float32 = 128
             end
         end
 
@@ -143,13 +147,20 @@ function julia_main()::Cint
                         end
 
                         gui_tab_item("Assets") do
+                            @c CImGui.SliderFloat(
+                                "Min Size", &min_asset_tex_length,
+                                1, 1024
+                            )
+
                             function show_tex(name::String, tex::GL.Texture)
-                                handle = GUI.gui_tex_handle(tex)
+                                view = GL.get_view(tex, GL.TexSampler{2}(
+                                    pixel_filter=GL.PixelFilters.rough
+                                ))
+                                handle = GUI.gui_tex_handle(view)
                                 size::v2u = GL.tex_size(tex)
 
                                 # If the texture is very small, blow it up.
-                                MIN_LENGTH = Float32(128)
-                                scale_up_ratio = MIN_LENGTH / min(size)
+                                scale_up_ratio = min_asset_tex_length / min(size)
                                 draw_size::v2f = if scale_up_ratio > 1
                                     size * scale_up_ratio
                                 else

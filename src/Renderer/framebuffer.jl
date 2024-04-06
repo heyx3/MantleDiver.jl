@@ -26,188 +26,137 @@ const DENSITY_BITS = UInt8(7)
 const DENSITY_PACKED_MAX = (UInt8(1) << DENSITY_BITS) - UInt8(1)
 const DENSITY_BIT_MASK = DENSITY_PACKED_MAX
 
+"Defines GLSL utilities for packing and unpacking framebuffer data"
+const SHADER_CODE_FRAMEBUFFER_DATA = """
+//The surface properties that shaders should output.
+//Further below is code to pack them for the framebuffer.
+struct MaterialSurface
+{
+    uint foregroundShape;
 
-const SHADER_FRAMEBUFFER_PACKING = """
-    //The surface properties that shaders should output.
-    //Further below is code to pack them for the framebuffer.
-    struct MaterialSurface
+    uint foregroundColor;
+    uint backgroundColor;
+
+    float foregroundDensity;
+    float backgroundDensity;
+
+    bool isTransparent;
+};
+
+uint packColor(uint value)
+{
+    value = clamp(value, uint(0), uint($COLOR_PACKED_MAX));
+    value &= $COLOR_BIT_MASK;
+    return value;
+}
+uint unpackColor(uint sampleR)
+{
+    return sampleR & $COLOR_BIT_MASK;
+}
+
+uint packShape(uint value)
+{
+    value = clamp(value, uint(0), uint($(Int(SHAPE_PACKED_MAX))));
+    value &= $(Int(SHAPE_BIT_MASK));
+    value <<= $(Int(COLOR_BITS));
+    return value;
+}
+uint unpackShape(uint value)
+{
+    return (value >> $(Int(COLOR_BITS))) & $(Int(SHAPE_BIT_MASK));
+}
+
+uint packDensity(float value)
+{
+    value *= float($(Int(DENSITY_PACKED_MAX)));
+    uint roundedValue = clamp(uint(value), uint(0), uint($(Int(DENSITY_PACKED_MAX))));
+    return (roundedValue & $(Int(DENSITY_BIT_MASK)));
+}
+float unpackDensity(uint sampleR)
+{
+    return float(sampleR & $(Int(DENSITY_BIT_MASK))) /
+                float($(Int(DENSITY_PACKED_MAX)));
+}
+
+uvec2 packForeground(MaterialSurface surf)
+{
+    return uvec2(
+        packShape(surf.foregroundShape) |
+            packShape(surf.foregroundColor),
+        packDensity(surf.foregroundDensity) |
+            ((surf.isTransparent ? 1 : 0) << $(Int(DENSITY_BITS)))
+    );
+}
+uint packBackground(MaterialSurface surf, bool isPartiallyOccluded)
+{
+    uint color;
+    float density;
+    if (!isPartiallyOccluded || surf.isTransparent)
     {
-        uint foregroundShape;
-
-        uint foregroundColor;
-        uint backgroundColor;
-
-        float foregroundDensity;
-        float backgroundDensity;
-
-        bool isTransparent;
-    };
-
-    uint packColor(uint value)
-    {
-        value = clamp(value, 0, $COLOR_PACKED_MAX)
-        value &= $COLOR_BIT_MASK;
-        return value;
+        color = surf.backgroundColor;
+        density = surf.backgroundDensity;
     }
-    uint unpackColor(uint sample)
+    else
     {
-        return sample & $COLOR_BIT_MASK;
-    }
-
-    uint packShape(uint value)
-    {
-        value = clamp(value, 0, $SHAPE_PACKED_MAX)
-        value &= $SHAPE_BIT_MASK;
-        value <<= $COLOR_BITS;
-        return value;
-    }
-    uint unpackShape(uint value)
-    {
-        return (value >> $COLOR_BITS) & $SHAPE_BIT_MASK;
-    }
-
-    uint packDensity(float value)
-    {
-        value *= float($(Int(DENSITY_PACKED_MAX)));
-        uint roundedValue = clamp((uint)value, 0, $DENSITY_PACKED_MAX);
-        return (roundedValue & $DENSITY_BIT_MASK);
-    }
-    float unpackDensity(uint sample)
-    {
-        return float(sample & $DENSITY_BIT_MASK) /
-                 float($DENSITY_PACKED_MAX);
-    }
-
-    uint2 packForeground(MaterialSurface surf)
-    {
-        return uint2(
-            packShape(surf.foregroundShape) | packShape(surf.foregroundColor),
-            packDensity(surf.foregroundDensity) |
-              (surf.isTransparent ? 1 : 0) << $DENSITY_BITS
-        );
-    }
-    uint packBackground(MaterialSurface surf, bool isPartiallyOccluded)
-    {
-        uint color;
-        float density;
-        if (!isPartiallyOccluded || surf.isTransparent)
-        {
-            color = surf.backgroundColor;
-            density = surf.backgroundDensity;
-        }
-        else
-        {
-            color = surf.foregroundColor;
-            density = surf.foregroundDensity;
-        }
-
-        return packColor(color) | (packDensity(density) << $COLOR_BITS);
+        color = surf.foregroundColor;
+        density = surf.foregroundDensity;
     }
 
-    //The 'IsTransparent' flag will come from the foreground surface;
-    //    a partially-occluded surface's transparency flag is not recoverable.
-    MaterialSurface unpackFramebuffer(uint2 foregroundSample, uint backgroundSample)
-    {
-        MaterialSurface output;
+    return packColor(color) | (packDensity(density) << $(Int(COLOR_BITS)));
+}
 
-        output.foregroundShape = unpackShape(foregroundSample.x);
-        output.foregroundColor = unpackColor(foregroundSample.x);
-        output.foregroundDensity = unpackDensity(foregroundSample.y);
-        output.isTransparent = ((foregroundSample.y >> $DENSITY_BITS) == 0) : false : true;
+//The 'IsTransparent' flag will come from the foreground surface;
+//    a partially-occluded surface's transparency flag can't be recovered from the framebuffer.
+MaterialSurface unpackFramebuffer(uvec4 foregroundSampleRGBA, uvec4 backgroundSampleRGBA)
+{
+    MaterialSurface ms;
+    uvec2 foregroundSample = foregroundSampleRGBA.xy;
+    uint backgroundSample = backgroundSampleRGBA.x;
 
-        output.backgroundColor = unpackColor(backgroundSample);
-        output.backgroundDensity = unpackDensity(backgroundSample >> $COLOR_BITS);
+    ms.foregroundShape = unpackShape(foregroundSample.x);
+    ms.foregroundColor = unpackColor(foregroundSample.x);
+    ms.foregroundDensity = unpackDensity(foregroundSample.y);
+    ms.isTransparent = ((foregroundSample.y >> $(Int(DENSITY_BITS))) == 0) ? false : true;
 
-        return output;
-    }
+    ms.backgroundColor = unpackColor(backgroundSample);
+    ms.backgroundDensity = unpackDensity(backgroundSample >> $(Int(COLOR_BITS)));
+
+    return ms;
+}
 """
 
 
-mutable struct WorldViewport
-    foreground::Texture
-    background::Texture
-
-    foreground_depth::Texture
-
-    foreground_target::Target
-    background_target::Target
-
-    resolution::v2i
-
-    function Framebuffer(resolution::v2i)
-        foreground = Texture(FOREGROUND_FORMAT, resolution)
-        foreground_depth = Texture(DEPTH_FORMAT, resolution)
-        foreground_target = Target(TargetOutput(tex=foreground),
-                                   TargetOutput(tex=foreground_depth))
-
-        background = Texture(BACKGROUND_FORMAT, resolution)
-        background_target = Target(TargetOutput(tex=background),
-                                   DEPTH_FORMAT)
-
-        return new(foreground, background,
-                   foreground_depth,
-                   foreground_target, background_target,
-                   resolution)
-    end
+"UBO data buffer for a single framebuffer"
+GL.@std140 struct FrameBufferData
+    tex_foreground::UInt64
+    tex_background::UInt64
+    char_grid_resolution::v2u # resolution of foreground and background textures
+    char_pixel_size::v2u
 end
-function Base.close(wv::WorldViewport)
-    for f in fieldnames(typeof(wv))
-        v = getfield(wv, f)
-        if v isa Resource
-            close(v)
-        end
-    end
-end
+const UBO_INDEX_FRAMEBUFFER_DATA = 2
 
+const UBO_NAME_FRAMEBUFFER_DATA = "FrameBufferData"
+const UBO_CODE_FRAMEBUFFER_DATA = """
+layout (std140, binding=$(UBO_INDEX_FRAMEBUFFER_DATA-1)) uniform $UBO_NAME_FRAMEBUFFER_DATA {
+    usampler2D texForeground;
+    usampler2D texBackground;
+    uvec2 charGridResolution;
+    uvec2 charPixelSize;
+} u_framebuffer;
 
-@enum(RenderPass, foreground, background)
+//Reads the surface data and calculates the ascii char UV
+//    at the given framebuffer UV coordinate.
+void readFramebuffer(vec2 uv, out MaterialSurface outSurface, out vec2 outCharUV)
+{
+    outSurface = unpackFramebuffer(
+        textureLod(u_framebuffer.texForeground, uv, 0.0),
+        textureLod(u_framebuffer.texBackground, uv, 0.0)
+    );
 
-"
-Executes the render logic for the world,
-    given a callback that actually issues all the world draw calls
-    and a boolean for whether to put the output directly onto the screen.
-
-The callback should take one argument, the `E_RenderPass`,
-    and should leave unchanged the render state and active Target.
-"
-function run_render_passes(viewport::WorldViewport,
-                           callback_draw_world,
-                           to_screen::Bool)
-    game_render_state = GL.RenderState(
-        depth_write=true,
-        depth_test=GL.ValueTests.less_than,
-        viewport=Math.Box2Di(
-            min=v2i(1, 1),
-            size=viewport.resolution
-        ),
-        cull_mode=GL.FaceCullModes.backwards,
-        blend_mode = (rgb=GL.make_blend_opaque(GL.BlendStateRGB),
-                      alpha=GL.make_blend_opaque(GL.BlendStateAlpha))
-    )
-    GL.with_render_state(game_render_state) do
-        # Draw foreground:
-        GL.target_clear(viewport.foreground_target,
-                        vRGBAu(Val(~zero(UInt32))),
-                        1)
-        GL.target_clear(viewport.foreground_target,
-                        vRGBAu(Val(~zero(UInt32))),
-                        2)
-        GL.target_clear(viewport.foreground_target, Float32(1))
-        GL.target_activate(viewport.foreground_target)
-        callback_draw_world(RenderPass.foreground)
-
-        # Draw background:
-        GL.target_clear(viewport.background_target,
-                        vRGBAu(Val(~zero(UInt32))),
-                        1)
-        GL.target_clear(viewport.background_target, Float32(1))
-        GL.target_activate(viewport.background_target)
-        callback_draw_world(RenderPass.background)
-    end
-
-    #TODO: Render ascii characters
-
-    if to_screen
-        #TODO: Present to screen
-    end
-end
+    vec2 charGridCellF = uv * u_framebuffer.charGridResolution;
+    vec2 screenPixelF = charGridCellF * u_framebuffer.charPixelSize;
+    vec2 charMinScreenPixel = trunc(charGridCellF) * u_framebuffer.charPixelSize,
+         charMaxScreenPixel = trunc(charGridCellF + 1) * u_framebuffer.charPixelSize;
+    outCharUV = (screenPixelF - charMinScreenPixel) / (charMaxScreenPixel - charMinScreenPixel);
+}
+"""
