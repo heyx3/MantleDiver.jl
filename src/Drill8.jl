@@ -31,6 +31,7 @@ macro shout(data...)
 end
 
 
+include("Renderer/shader_utils.jl")
 include("Renderer/framebuffer.jl")
 include("Renderer/chars.jl")
 include("Renderer/assets.jl")
@@ -148,7 +149,7 @@ function julia_main()::Cint
                                 if CImGui.ImageButton(gui_tex_handle(tex),
                                                       v2f(30, 30),
                                                       (0, 0), (1, 1),
-                                                      -1, (0,0,0,0),
+                                                      -1, (0, 0, 0, 0),
                                                       tint.data)
                                     current_speed = speed
                                 end

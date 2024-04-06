@@ -29,7 +29,7 @@ const DENSITY_BIT_MASK = DENSITY_PACKED_MAX
 "Defines GLSL utilities for packing and unpacking framebuffer data"
 const SHADER_CODE_FRAMEBUFFER_DATA = """
 //The surface properties that shaders should output.
-//Further below is code to pack them for the framebuffer.
+//Further below is code to pack and unpack them for the framebuffer.
 struct MaterialSurface
 {
     uint foregroundShape;
@@ -131,7 +131,6 @@ GL.@std140 struct FrameBufferData
     tex_foreground::UInt64
     tex_background::UInt64
     char_grid_resolution::v2u # resolution of foreground and background textures
-    char_pixel_size::v2u
 end
 const UBO_INDEX_FRAMEBUFFER_DATA = 2
 
@@ -141,7 +140,6 @@ layout (std140, binding=$(UBO_INDEX_FRAMEBUFFER_DATA-1)) uniform $UBO_NAME_FRAME
     usampler2D texForeground;
     usampler2D texBackground;
     uvec2 charGridResolution;
-    uvec2 charPixelSize;
 } u_framebuffer;
 
 //Reads the surface data and calculates the ascii char UV
@@ -154,9 +152,6 @@ void readFramebuffer(vec2 uv, out MaterialSurface outSurface, out vec2 outCharUV
     );
 
     vec2 charGridCellF = uv * u_framebuffer.charGridResolution;
-    vec2 screenPixelF = charGridCellF * u_framebuffer.charPixelSize;
-    vec2 charMinScreenPixel = trunc(charGridCellF) * u_framebuffer.charPixelSize,
-         charMaxScreenPixel = trunc(charGridCellF + 1) * u_framebuffer.charPixelSize;
-    outCharUV = (screenPixelF - charMinScreenPixel) / (charMaxScreenPixel - charMinScreenPixel);
+    outCharUV = fract(charGridCellF);
 }
 """

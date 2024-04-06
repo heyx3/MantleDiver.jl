@@ -4,6 +4,17 @@ const FILE_NAME_FONT = "JetBrainsMono-Bold.ttf"
 const FILE_NAME_PALETTE = "Palette.png"
 
 
+Bplus.@bp_enum(FramebufferRenderMode,
+    regular,
+    char_greyscale,
+    foreground_shape,
+    foreground_color,
+    foreground_density,
+    background_color,
+    background_density
+)
+const UNIFORM_NAME_RENDER_MODE = "u_outputMode";
+
 
 "Loads all necessary assets from disk"
 mutable struct Assets
@@ -23,6 +34,9 @@ mutable struct Assets
     palette::Texture
 
     shader_render_chars::Program
+
+    chars_ubo_data::CharRenderAssetBuffer
+    chars_ubo::GL.Buffer
 end
 
 function Assets()
@@ -214,6 +228,7 @@ function Assets()
     palette_resolution::v2i = vsize(palette)
     @d8_assert(palette_resolution.y == 1,
                "Palette should be Nx1 resolution, got ", palette_resolution)
+    n_colors::Int = palette_resolution.x
     palette_tex = GL.Texture(
         GL.SimpleFormat(
             GL.FormatTypes.normalized_uint,
@@ -242,31 +257,73 @@ function Assets()
             out vec4 vOut_color;
 
             $SHADER_CODE_FRAMEBUFFER_DATA
-            $UBO_CODE_FRAMEBUFFER_DATA
 
+            $UBO_CODE_FRAMEBUFFER_DATA
             $UBO_CODE_CHAR_RENDERING
 
+            uniform int $UNIFORM_NAME_RENDER_MODE;
+
+            $SHADER_CODE_UTILS
+
             void main() {
+                vOut_color = vec4(1, 0, 1, 1);
+                #define PICK_OUTPUT(colorRGB) { vOut_color.rgb = vec3(colorRGB); return; }
+
+                //Read data from the framebuffer.
                 MaterialSurface surface;
                 vec2 charUV;
                 readFramebuffer(vOut_uv, surface, charUV);
+                if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.foreground_shape)))
+                    PICK_OUTPUT(PROCEDURAL_GRADIENT(
+                        float(surface.foregroundShape) / $N_CHAR_SHAPES,
+                        0.5, 0.5, vec3(1.4, 1.7, 2.4), vec3(0.3, 0.2, 0.2)
+                    ))
+                else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.foreground_color)))
+                    PICK_OUTPUT(float(surface.foregroundColor) / float(u_char_rendering.n_colors - 1))
+                else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.foreground_density)))
+                    PICK_OUTPUT(surface.foregroundDensity)
+                else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.background_color)))
+                    PICK_OUTPUT(float(surface.backgroundColor / float(u_char_rendering.n_colors - 1)))
+                else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.background_density)))
+                    PICK_OUTPUT(surface.foregroundDensity)
 
+                //Read the font atlas for this pixel's char.
                 float charA = readChar(surface.foregroundShape, surface.foregroundDensity, charUV);
+                if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.char_greyscale)))
+                    PICK_OUTPUT(charA)
 
+                //Apply the rules for coloring the char.
                 vec3 foregroundColor = readColor(surface.foregroundColor);
                 vec3 backgroundColor = readColor(surface.backgroundColor) *
                                          surface.backgroundDensity;
+                vec3 finalColor = mix(backgroundColor, foregroundColor, charA);
 
-                vOut_color = vec4(mix(backgroundColor, foregroundColor, charA),
-                                  1.0);
+                if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.regular)))
+                    PICK_OUTPUT(finalColor)
             }
     """)
+
+    chars_ubo_data = CharRenderAssetBuffer(
+        GL.get_ogl_handle(GL.get_view(chars_atlas_lookup_tex)),
+        GL.get_ogl_handle(GL.get_view(chars_atlas_tex)),
+        GL.get_ogl_handle(GL.get_view(palette_tex)),
+        n_colors,
+        n_shapes,
+        ntuple(Val(N_CHAR_SHAPES)) do shape_i
+            shape = CharShapeType.from(shape_i - 1)
+            return length(ASCII_CHARS_BY_SHAPE_THEN_DENSITY[shape]) + 1
+        end
+    )
+    chars_ubo = GL.Buffer(false, [ chars_ubo_data ])
+    GL.set_uniform_block(chars_ubo, UBO_INDEX_CHAR_RENDERING)
 
     return Assets(ft_lib, font_face,
                   chars_atlas_lookup_tex, chars_atlas_tex,
                   v2i(CHAR_PIXEL_SIZE, CHAR_PIXEL_SIZE),
                   palette_tex,
-                  shader_render_chars)
+                  shader_render_chars,
+                  chars_ubo_data,
+                  chars_ubo)
 end
 
 function Base.close(a::Assets)
@@ -274,6 +331,7 @@ function Base.close(a::Assets)
     close(a.chars_atlas)
     close(a.palette)
     close(a.shader_render_chars)
+    close(a.chars_ubo)
 
     @c FT_Done_Face(a.chars_font)
     @c FT_Done_FreeType(a.ft_lib)
