@@ -28,7 +28,7 @@ end
 function Base.close(wv::WorldViewport)
     for f in fieldnames(typeof(wv))
         v = getfield(wv, f)
-        if v isa Resource
+        if v isa AbstractResource
             close(v)
         end
     end
