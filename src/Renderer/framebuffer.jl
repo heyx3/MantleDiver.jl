@@ -125,6 +125,23 @@ MaterialSurface unpackFramebuffer(uvec4 foregroundSampleRGBA, uvec4 backgroundSa
 }
 """
 
+error("#TODO: rewrite this to use a UBO and include foreground depth sampler for background pass (using dummy for foreground pass)")
+const UNIFORM_NAME_FOREGROUND_OUTPUT_FLAG = "u_outputForeground"
+"
+Defines the system for outputting to the framebuffer
+    based on a uniform for the current draw pass.
+"
+const SHADER_CODE_FRAMEBUFFER_OUTPUT = """
+    out uvec2 fOut;
+    uniform bool $UNIFORM_NAME_FOREGROUND_OUTPUT_FLAG;
+    void OutputFramebuffer(MaterialSurface surf) {
+        if (u_outputForeground)
+            fOut = packForeground(surf);
+        else
+            fOut = uvec2(packBackground(surf), 0);
+    }
+"""
+
 
 "UBO data buffer for a single framebuffer"
 GL.@std140 struct FrameBufferData

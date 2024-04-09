@@ -97,8 +97,9 @@ end
     test_rule(idx::v3i)::Int = (idx.x * (17278 + idx.y)) ⊻ ~(idx.z)
 
     "Associates a string with some grid elements"
-    TestBulkElements = D8.BulkElements{String}
-    D8.bulk_data_is_passable(::TestBulkElements, ::v3i, ::String) = true
+    @compponent TestBulkElements <: D8.BulkElements{String} begin
+        is_passable(::v3i, ::String) = true
+    end
 
     @component TestGenerator <: D8.GridGenerator begin
         generate(i::v3i) = let e = add_entity(world)

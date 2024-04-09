@@ -105,6 +105,8 @@ function run_render_passes(callback_draw_world,
 
     # Post-process the framebuffer into ascii chars, drawing to the given output.
     GL.set_uniform_block(viewport.ubo, UBO_INDEX_FRAMEBUFFER_DATA)
+    GL.view_activate(viewport.foreground)
+    GL.view_activate(vieport.background)
     output_render_state = GL.RenderState(
         depth_write=false,
         depth_test=GL.ValueTests.pass,

@@ -40,9 +40,11 @@ include("Renderer/world_viewport.jl")
 include("Components/Core/transforms.jl")
 include("Components/Core/grid_data.jl")
 include("Components/Core/grid_event_responders.jl")
+include("Components/Core/grid_element_bulk.jl")
 include("Components/Core/grid_manager.jl")
 include("Components/Core/grid_element.jl")
 include("Components/Core/debug_gui_visuals.jl")
+include("Components/Core/renderable.jl")
 
 include("Components/GridObjects/rock.jl")
 
@@ -67,11 +69,12 @@ include("debug_gui_widgets.jl")
     fast_forward
 )
 
-
 function julia_main()::Cint
     @game_loop begin
         INIT(
             v2i(1280, 770), "Drill8"
+            ;
+            debug_mode = @d8_debug
         )
 
         SETUP = begin
@@ -97,6 +100,19 @@ function julia_main()::Cint
         LOOP = begin
             if GLFW.WindowShouldClose(LOOP.context.window)
                 break
+            end
+            # Grab any OpenGL warnings/errors and log them.
+            @d8_debug for log in GL.pull_gl_logs()
+                log_msg() = sprint(show, log)
+                if log.severity in (DebugEventSeverities.high, DebugEventSeverities.medium)
+                    @error "OpenGL error: $(log_msg())"
+                elseif log.severity == DebugEventSeverities.low
+                    @warn "OpenGL warning: $(log_msg())"
+                elseif log.severity == DebugEventSeverities.none
+                    @info "OpenGL message: $(log_msg())"
+                else
+                    error("Unhandled case: ", log.severity)
+                end
             end
 
             # Tick the mission, and quit if it ends.

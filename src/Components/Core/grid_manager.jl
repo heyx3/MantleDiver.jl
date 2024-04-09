@@ -4,50 +4,6 @@
 # The chunks, manager, and generator all live on a single entity.
 
 
-"""
-Each grid cell can be occupied by a different entity.
-However, for ubiquitous things like rocks, this is very inefficient.
-So you can also write a "bulk" grid entity which manages an unlimited set of simple objects.
-
-Only one bulk component can exist for each type of grid object.
-You should overload `bulk_data_is_passable` for your object data type.
-"""
-@component BulkElements{T} {worldSingleton} {require: DrillResponse} begin
-    lookup::Dict{v3i, T}
-    CONSTRUCT() = (this.lookup = Dict{v3i, T}())
-end
-
-function bulk_create_at(b::BulkElements{T}, grid_idx::v3i, new_data::T)::Nothing where {T}
-    @d8_assert(!haskey(b.lookup, grid_idx),
-               "Trying to create bulk ", T, " at location which already has one: ", grid_idx)
-    b.lookup[grid_idx] = new_data
-    return nothing
-end
-function bulk_destroy_at(b::BulkElements{T}, grid_idx::v3i)::T where {T}
-    @d8_assert(haskey(b.lookup, grid_idx),
-               "Trying to destroy nonexistent bulk ", T, " at ", grid_idx)
-    deleted = b.lookup[grid_idx]
-    delete!(b.lookup, grid_idx)
-    return deleted
-end
-function bulk_data_at(b::BulkElements{T}, grid_idx::v3i)::Optional{T} where {T}
-    return get(b.lookup, grid_idx, nothing)
-end
-function bulk_is_passable(b::BulkElements{T}, grid_idx::v3i)::Bool where {T}
-    return bulk_data_is_passable(b, grid_idx, bulk_data_at(b, grid_idx))
-end
-
-bulk_data_is_passable(bulk, grid_idx, data)::Bool = error(
-    "Not implemented: bulk_data_is_passable(",
-    "::", typeof(bulk), ", ::", typeof(grid_idx), ", ::", typeof(data),
-    ")"
-)
-
-
-"An element within a bulk entity, represented with its world-grid index"
-const BulkEntity{B<:BulkElements} = Tuple{B, v3i}
-
-
 ##  GridGenerator  ##
 
 @component GridGenerator {abstract} {worldSingleton} begin
