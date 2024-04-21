@@ -169,7 +169,7 @@ function component_at!(gm::GridManager, world_grid_pos::Vec3, ::Type{T})::Option
     end
 end
 
-"Adds the given bulk-entity to the world"
+"Adds to the world the given element from a bulk-entity"
 function add_bulk_entity!(gm::GridManager, world_grid_pos::Vec3,
                           bulk::BulkElements{T}, data::T) where {T}
     world_grid_idx = grid_idx(world_grid_pos)

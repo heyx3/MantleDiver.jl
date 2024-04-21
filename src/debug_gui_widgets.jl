@@ -1,11 +1,19 @@
 # Various GUI widgets for drawing debug-mode data.
 
+@bp_enum(DebugGuiSpeed,
+    play,
+    pause,
+    fast_forward
+)
+
 mutable struct DebugGui
     game_view_sorted_elements::Vector{Tuple{DebugGuiVisuals, Entity, Int64}}
+    debug_gui_speed::E_DebugGuiSpeed
     maneuver_next_move_flip::Int8
 
-    DebugGui() = new([ ], 1)
+    DebugGui() = new([ ], DebugGuiSpeed.play, 1)
 end
+Base.close(dg::DebugGui) = nothing
 
 
 ############################################
@@ -176,5 +184,42 @@ function gui_debug_maneuvers(mission::Mission, gui::DebugGui)
     if maneuver_button(">>##Drill6"; force_disable=!is_drill_legal(v3i(0, 1, 0)))
         drill_dir = grid_dir(rotate_cab_movement(v3i(0, 1, 0), current_move_dir))
         player_start_drilling(mission.player, drill_dir)
+    end
+end
+
+
+##########################################
+##   Game Speed Controls
+
+function gui_game_speed(gui::DebugGui, assets::DebugAssets)
+    gui_with_nested_id("SpeedControls") do
+        for speed::E_DebugGuiSpeed in DebugGuiSpeed.instances()
+            tex::Texture = if speed == DebugGuiSpeed.play
+                assets.tex_button_play
+            elseif speed == DebugGuiSpeed.pause
+                assets.tex_button_pause
+            elseif speed == DebugGuiSpeed.fast_forward
+                assets.tex_button_fast_forward
+            else
+                error("Unhandled: ", speed)
+            end
+            tint = if speed == gui.debug_gui_speed
+                v4f(1, 1, 1, 1)
+            else
+                v4f(0.5, 0.5, 0.5, 1)
+            end
+            GUI.gui_with_nested_id(Int(speed)) do
+                if CImGui.ImageButton(gui_tex_handle(tex),
+                                      v2f(30, 30),
+                                      (0, 0), (1, 1),
+                                      -1, (0, 0, 0, 0),
+                                      tint.data)
+                    gui.debug_gui_speed = speed
+                end
+            end
+            CImGui.SameLine()
+        end
+        # Undo the last SameLine()
+        CImGui.Dummy(0.0001, 0.0001)
     end
 end

@@ -37,6 +37,9 @@ mutable struct Assets
 
     chars_ubo_data::CharRenderAssetBuffer
     chars_ubo::GL.Buffer
+
+    # A tiny depth texture, cleared to max depth.
+    blank_depth_tex::Texture
 end
 
 function Assets()
@@ -256,9 +259,7 @@ function Assets()
             in vec2 vOut_uv;
             out vec4 vOut_color;
 
-            $SHADER_CODE_FRAMEBUFFER_DATA
-
-            $UBO_CODE_FRAMEBUFFER_DATA
+            $UBO_CODE_FRAMEBUFFER_READ_DATA
             $UBO_CODE_CHAR_RENDERING
 
             uniform int $UNIFORM_NAME_RENDER_MODE;
@@ -323,7 +324,12 @@ function Assets()
                   palette_tex,
                   shader_render_chars,
                   chars_ubo_data,
-                  chars_ubo)
+                  chars_ubo,
+                  GL.Texture(GL.DepthStencilFormats.depth_16u,
+                             [ @f32(1) ],
+                             sampler = TexSampler{2}(
+                                pixel_filter = PixelFilters.rough
+                             )))
 end
 
 function Base.close(a::Assets)
@@ -332,6 +338,7 @@ function Base.close(a::Assets)
     close(a.palette)
     close(a.shader_render_chars)
     close(a.chars_ubo)
+    close(a.blank_depth_tex)
 
     @c FT_Done_Face(a.chars_font)
     @c FT_Done_FreeType(a.ft_lib)

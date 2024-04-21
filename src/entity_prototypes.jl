@@ -20,6 +20,7 @@ function make_player(world::World, pos::Vec3)::Entity
     entity = add_entity(world)
 
     pos_component = add_component(entity, ContinuousPosition, convert(v3f, pos))
+    orientation_component = add_component(entity, WorldOrientation)
     debug_visuals = add_component(entity, DebugGuiVisuals_DrillPod,
         vRGBAf(0.2, 1, 0.5, 1),
         @f32(10),
@@ -96,7 +97,8 @@ NOTE: Only registers the rock with the bulk grid entity, not with the chunks!
 So this should only be called from the level's Generator component.
 "
 function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock;
-                   grid::GridManager = get_component(world, GridManager))::BulkEntity{RockBulkElements}
+                   grid::GridManager = get_component(world, GridManager)[1]
+                  )::BulkEntity{RockBulkElements}
     # Get or make the bulk grid element for rocks.
     rocks = let found = get_component(world, RockBulkElements)
         if exists(found)
@@ -110,6 +112,6 @@ function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock;
         end
     end
 
-    add_bulk_entity!(grid, grid_pos, rocks, data)
+    bulk_create_at(rocks, grid_pos, data)
     return (rocks, grid_pos)
 end

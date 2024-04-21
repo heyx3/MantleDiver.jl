@@ -9,6 +9,9 @@ using Bplus; @using_bplus
 
 # Reconfigure B+'s coordinate system to match Dear ImGUI.
 Bplus.BplusCore.Math.get_right_handed() = false
+const WORLD_FORWARD = v3f(1, 0, 0)
+const WORLD_RIGHT = v3f(0, 1, 0)
+const WORLD_UP = v3f(0, 0, 1)
 
 const PI2 = Float32(2π)
 
@@ -63,17 +66,11 @@ include("debug_gui_widgets.jl")
     game,
     assets
 )
-@bp_enum(DebugGuiSpeed,
-    play,
-    pause,
-    fast_forward
-)
 
 function julia_main()::Cint
     @game_loop begin
         INIT(
-            v2i(1280, 770), "Drill8"
-            ;
+            v2i(1280, 770), "Drill8",
             debug_mode = @d8_debug
         )
 
@@ -145,36 +142,7 @@ function julia_main()::Cint
                 CImGui.SetNextWindowPos(v2i(0, 0))
                 CImGui.SetNextWindowSize(screen_size)
                 GUI.gui_window("#MainWnd", C_NULL, CImGui.LibCImGui.ImGuiWindowFlags_NoDecoration) do
-                    gui_with_nested_id("SpeedControls") do
-                        for speed::E_DebugGuiSpeed in DebugGuiSpeed.instances()
-                            tex::Texture = if speed == DebugGuiSpeed.play
-                                debug_assets.tex_button_play
-                            elseif speed == DebugGuiSpeed.pause
-                                debug_assets.tex_button_pause
-                            elseif speed == DebugGuiSpeed.fast_forward
-                                debug_assets.tex_button_fast_forward
-                            else
-                                error("Unhandled: ", speed)
-                            end
-                            tint = if speed == current_speed
-                                v4f(1, 1, 1, 1)
-                            else
-                                v4f(0.5, 0.5, 0.5, 1)
-                            end
-                            GUI.gui_with_nested_id(Int(speed)) do
-                                if CImGui.ImageButton(gui_tex_handle(tex),
-                                                      v2f(30, 30),
-                                                      (0, 0), (1, 1),
-                                                      -1, (0, 0, 0, 0),
-                                                      tint.data)
-                                    current_speed = speed
-                                end
-                            end
-                            CImGui.SameLine()
-                        end
-                        # Undo the last SameLine()
-                        CImGui.Dummy(0.0001, 0.0001)
-                    end
+                    gui_game_speed(debug_gui, debug_assets)
 
                     # Draw the tabs.
                     gui_tab_views("#DebugTabs") do
@@ -232,6 +200,8 @@ function julia_main()::Cint
         end
 
         TEARDOWN = begin
+            close(mission)
+            close(debug_gui)
             close(debug_assets)
             close(assets)
         end

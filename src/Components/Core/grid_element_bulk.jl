@@ -1,5 +1,4 @@
 
-
 """
 Each grid cell can be occupied by a different entity.
 However, for ubiquitous things like rocks, this is very inefficient.
@@ -24,7 +23,11 @@ Only one bulk component can exist for each type of grid object.
     @promise is_passable(grid_idx::v3i, data::T)::Bool
 end
 
-function bulk_create_at(b::BulkElements{T}, grid_idx::v3i, new_data::T)::Nothing where {T}
+function bulk_create_at( b::BulkElements{T},
+                         grid_idx::v3i,
+                         new_data::T,
+                         ::Type{T} = typeof(new_data)
+                       )::Nothing where {T}
     @d8_assert(!haskey(b.lookup, grid_idx),
                "Trying to create bulk ", T, " at location which already has one: ", grid_idx)
     b.lookup[grid_idx] = new_data

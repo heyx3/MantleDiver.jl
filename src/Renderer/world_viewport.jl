@@ -9,12 +9,17 @@ mutable struct WorldViewport
 
     resolution::v2i
 
-    ubo_data::FrameBufferData
-    ubo::Buffer
+    ubo_read_data::FrameBufferReadData
+    ubo_read::Buffer
+    ubo_write::Buffer
 
     function Framebuffer(resolution::v2i)
         foreground = Texture(FOREGROUND_FORMAT, resolution)
-        foreground_depth = Texture(DEPTH_FORMAT, resolution)
+        foreground_depth = Texture(DEPTH_FORMAT, resolution;
+                                   sampler=GL.TexSampler{2}(
+                                       pixel_filter = PixelFilters.rough,
+                                       wrapping = WrapModes.clamp
+                                   ))
         foreground_target = Target(TargetOutput(tex=foreground),
                                    TargetOutput(tex=foreground_depth))
 
@@ -22,10 +27,14 @@ mutable struct WorldViewport
         background_target = Target(TargetOutput(tex=background),
                                    DEPTH_FORMAT)
 
-        ubo_data = FrameBufferData(
+        ubo_read_data = FrameBufferReadData(
             GL.get_ogl_handle(GL.get_view(foreground)),
             GL.get_ogl_handle(GL.get_view(background)),
             resolution
+        )
+        ubo_write_data = FrameBufferWriteData(
+            GL.get_ogl_handle(GL.get_view(foreground_depth)),
+            true
         )
 
         return new(
@@ -33,8 +42,9 @@ mutable struct WorldViewport
             foreground_depth,
             foreground_target, background_target,
             resolution,
-            ubo_data,
-            GL.Buffer(false, [ ubo_data ])
+            ubo_read_data,
+            GL.Buffer(false, [ ubo_read_data ]),
+            GL.Buffer(true, [ ubo_write_data ])
         )
     end
 end
@@ -54,7 +64,10 @@ end
 end
 
 
-@enum(RenderPass, foreground, background)
+@bp_enum(RenderPass,
+    foreground,
+    background
+)
 
 "
 Executes the render logic for the world,
@@ -62,14 +75,10 @@ Executes the render logic for the world,
 
 The callback should take one argument, the `E_RenderPass`,
     and should leave unchanged the render state and active Target.
-
-Can draw the final output to the screen, or to the given target's first color output.
 "
-function run_render_passes(callback_draw_world,
-                           viewport::WorldViewport,
-                           assets::Assets,
-                           settings::ViewportDrawSettings,
-                           output::Optional{GL.Target} = nothing)
+function render_to_framebuffer(callback_draw_world,
+                               viewport::WorldViewport,
+                               assets::Assets)
     game_render_state = GL.RenderState(
         depth_write=true,
         depth_test=GL.ValueTests.less_than,
@@ -82,7 +91,13 @@ function run_render_passes(callback_draw_world,
                       alpha=GL.make_blend_opaque(GL.BlendStateAlpha))
     )
     GL.with_render_state(game_render_state) do
+        GL.set_uniform_block(viewport.ubo_write, UBO_INDEX_FRAMEBUFFER_WRITE_DATA)
+
         # Draw foreground:
+        GL.set_buffer_data(viewport.ubo_write, Ref(FrameBufferWriteData(
+            GL.get_ogl_handle(GL.get_view(assets.blank_depth_tex)),
+            true
+        )))
         GL.target_clear(viewport.foreground_target,
                         vRGBAu(Val(~zero(UInt32))),
                         1)
@@ -94,6 +109,10 @@ function run_render_passes(callback_draw_world,
         callback_draw_world(RenderPass.foreground)
 
         # Draw background:
+        GL.set_buffer_data(viewport.ubo_write, Ref(FrameBufferWriteData(
+            GL.get_ogl_handle(GL.get_view(viewport.foreground_depth)),
+            false
+        )))
         GL.target_clear(viewport.background_target,
                         vRGBAu(Val(~zero(UInt32))),
                         1)
@@ -102,11 +121,19 @@ function run_render_passes(callback_draw_world,
         callback_draw_world(RenderPass.background)
     end
     GL.target_activate(nothing)
+end
 
-    # Post-process the framebuffer into ascii chars, drawing to the given output.
-    GL.set_uniform_block(viewport.ubo, UBO_INDEX_FRAMEBUFFER_DATA)
+"
+Displays the given framebuffer according to the given settings
+    (usually by rendering it as ASCII characters).
+"
+function post_process_framebuffer(viewport::WorldViewport,
+                                      assets::Assets,
+                                      settings::ViewportDrawSettings)
+    GL.set_uniform_block(viewport.ubo_read, UBO_INDEX_FRAMEBUFFER_READ_DATA)
     GL.view_activate(viewport.foreground)
     GL.view_activate(vieport.background)
+
     output_render_state = GL.RenderState(
         depth_write=false,
         depth_test=GL.ValueTests.pass,
@@ -115,17 +142,6 @@ function run_render_passes(callback_draw_world,
                       alpha=GL.make_blend_opaque(GL.BlendStateAlpha))
     )
     GL.with_render_state(output_render_state) do
-        local output_size::v2u
-        if exists(output)
-            output_size = output.size
-            GL.target_clear(output, vRGBAf(settings.background_color..., settings.background_alpha))
-        else
-            output_size = get_window_size()
-            GL.clear_screen(vRGBAf(settings.background_color..., settings.background_alpha))
-        end
-
-        GL.target_activate(output)
-
         GL.set_uniform(assets.shader_render_chars,
                        UNIFORM_NAME_RENDER_MODE,
                        Int(settings.output_mode))

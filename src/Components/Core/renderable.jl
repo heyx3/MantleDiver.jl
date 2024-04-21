@@ -8,11 +8,26 @@ GL.@std140 struct CameraDataBuffer
     matrix_inverse_projection::fmat4x4
     matrix_inverse_view_projection::fmat4x4
 
-    # 3D vectors have a 4th component just to avoid padding issues
+    # 3D vectors have a 4th component just to avoid padding issues.
+    # It will be set to 0 or 1 as appropriate for matrix math.
     cam_pos::v4f
     cam_forward::v4f
-    cam_right::v4f
     cam_up::v4f
+    cam_right::v4f
+end
+function CameraDataBuffer(cam::Cam3D{Float32})
+    m_view = cam_view_mat(cam)
+    m_proj = cam_projection_mat(cam)
+    m_view_proj = m_combine(m_view, m_proj)
+    basis = cam_basis(cam)
+    return CameraDataBuffer(
+        m_view, m_proj, m_view_proj,
+        m_invert(m_view), m_invert(m_proj), m_invert(m_view_proj),
+        v4f(cam.pos..., 1),
+        v4f(basis.forward..., 0),
+        v4f(basis.up..., 0),
+        v4f(basis.right..., 0)
+    )
 end
 const UBO_INDEX_CAM_DATA = 3
 const UBO_NAME_CAM_DATA = "WorldCameraData"
@@ -28,25 +43,20 @@ const UBO_CODE_CAM_DATA = """
 
         vec4 pos;
         vec4 forward;
-        vec4 right;
         vec4 up;
+        vec4 right;
     } u_world_cam;
 """
 
 
 "
 All inputs to a `Renderable` component.
-Because this struct is defined before `Mission`, that type must be fed in as a parameter.
 
-Note that your shaders can access to the camera data UBO;
+Note that your renderables also get access to the camera data UBO;
     just inject `UBO_CODE_CAM_DATA` into your shader.
 "
-struct WorldRenderData{TMission}
-    camera::Cam3D{Float32}
-    player::Entity
-    framebuffer::Framebuffer
-    mission::TMission
-    cam_ubo_data::CameraDataBuffer
+struct WorldRenderData
+    viewport::WorldViewport
 end
 
 "
