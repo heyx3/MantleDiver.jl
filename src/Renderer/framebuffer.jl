@@ -135,8 +135,7 @@ const UBO_INDEX_FRAMEBUFFER_WRITE_DATA = 5
 const UBO_NAME_FRAMEBUFFER_WRITE_DATA = "FrameBufferWriteData"
 const UBO_CODE_FRAMEBUFFER_WRITE_DATA = """
     layout(std140, binding=$(UBO_INDEX_FRAMEBUFFER_WRITE_DATA-1)) uniform $UBO_NAME_FRAMEBUFFER_WRITE_DATA {
-        sampler2D foregroundDepth; //A dummy texture if writing to foreground
-        bool foregroundMode; //If false, writing to background
+        $(glsl_decl(FrameBufferWriteData))
     } u_output;
 
     $SHADER_CODE_FRAMEBUFFER_PACKING
@@ -147,12 +146,12 @@ const UBO_CODE_FRAMEBUFFER_WRITE_DATA = """
         //In background mode, we need to discard the front-most surface if it is transparent,
         //    so that partially-occluded surfaces can write to the background.
         uvec2 pixel = uvec2(gl_FragCoord.xy + 0.49999);
-        bool isFrontmostSurface = (gl_FragCoord.z == texelFetch(u_output.foregroundDepth, ivec2(pixel), 0).r);
-        if (!u_output.foregroundMode && surf.isTransparent && isFrontmostSurface)
+        bool isFrontmostSurface = (gl_FragCoord.z == texelFetch(sampler2D(u_output.tex_foreground_depth), ivec2(pixel), 0).r);
+        if (!u_output.foreground_mode && surf.isTransparent && isFrontmostSurface)
             discard;
 
         //Pack the surface data appropriately.
-        if (u_output.foregroundMode)
+        if (u_output.foreground_mode)
             fOut_packed = packForeground(surf);
         else
             fOut_packed = uvec2(packBackground(surf, !isFrontmostSurface), 0);
@@ -170,9 +169,7 @@ const UBO_INDEX_FRAMEBUFFER_READ_DATA = 2
 const UBO_NAME_FRAMEBUFFER_READ_DATA = "FrameBufferReadData"
 const UBO_CODE_FRAMEBUFFER_READ_DATA = """
     layout (std140, binding=$(UBO_INDEX_FRAMEBUFFER_READ_DATA-1)) uniform $UBO_NAME_FRAMEBUFFER_READ_DATA {
-        usampler2D texForeground;
-        usampler2D texBackground;
-        uvec2 charGridResolution;
+        $(glsl_decl(FrameBufferReadData))
     } u_framebuffer;
 
     $SHADER_CODE_FRAMEBUFFER_PACKING
@@ -182,11 +179,11 @@ const UBO_CODE_FRAMEBUFFER_READ_DATA = """
     void readFramebuffer(vec2 uv, out MaterialSurface outSurface, out vec2 outCharUV)
     {
         outSurface = unpackFramebuffer(
-            textureLod(u_framebuffer.texForeground, uv, 0.0),
-            textureLod(u_framebuffer.texBackground, uv, 0.0)
+            textureLod(usampler2D(u_framebuffer.tex_foreground), uv, 0.0),
+            textureLod(usampler2D(u_framebuffer.tex_background), uv, 0.0)
         );
 
-        vec2 charGridCellF = uv * u_framebuffer.charGridResolution;
+        vec2 charGridCellF = uv * u_framebuffer.char_grid_resolution;
         outCharUV = fract(charGridCellF);
     }
 """

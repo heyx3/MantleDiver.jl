@@ -315,7 +315,7 @@ function Assets()
             return length(ASCII_CHARS_BY_SHAPE_THEN_DENSITY[shape]) + 1
         end
     )
-    chars_ubo = GL.Buffer(false, [ chars_ubo_data ])
+    chars_ubo = GL.Buffer(false, chars_ubo_data)
     GL.set_uniform_block(chars_ubo, UBO_INDEX_CHAR_RENDERING)
 
     return Assets(ft_lib, font_face,
@@ -326,7 +326,7 @@ function Assets()
                   chars_ubo_data,
                   chars_ubo,
                   GL.Texture(GL.DepthStencilFormats.depth_16u,
-                             [ @f32(1) ],
+                             [ @f32(1) ;; ],
                              sampler = TexSampler{2}(
                                 pixel_filter = PixelFilters.rough
                              )))

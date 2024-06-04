@@ -77,7 +77,8 @@ function julia_main()::Cint
         SETUP = begin
             mission = Mission(
                 PlayerLoadout(
-                )
+                ),
+                v2i(200, 200)
                 #, seed = 0x12345
             )
             assets = Assets()

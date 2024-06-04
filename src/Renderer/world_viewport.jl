@@ -13,7 +13,7 @@ mutable struct WorldViewport
     ubo_read::Buffer
     ubo_write::Buffer
 
-    function Framebuffer(resolution::v2i)
+    function WorldViewport(resolution::v2i)
         foreground = Texture(FOREGROUND_FORMAT, resolution)
         foreground_depth = Texture(DEPTH_FORMAT, resolution;
                                    sampler=GL.TexSampler{2}(
@@ -43,8 +43,8 @@ mutable struct WorldViewport
             foreground_target, background_target,
             resolution,
             ubo_read_data,
-            GL.Buffer(false, [ ubo_read_data ]),
-            GL.Buffer(true, [ ubo_write_data ])
+            GL.Buffer(false, ubo_read_data),
+            GL.Buffer(true, ubo_write_data)
         )
     end
 end
@@ -94,10 +94,11 @@ function render_to_framebuffer(callback_draw_world,
         GL.set_uniform_block(viewport.ubo_write, UBO_INDEX_FRAMEBUFFER_WRITE_DATA)
 
         # Draw foreground:
-        GL.set_buffer_data(viewport.ubo_write, Ref(FrameBufferWriteData(
+        #TOOD: Reuse the FrameBuffeRWriteData because it allocates on the heap
+        GL.set_buffer_data(viewport.ubo_write, FrameBufferWriteData(
             GL.get_ogl_handle(GL.get_view(assets.blank_depth_tex)),
             true
-        )))
+        ))
         GL.target_clear(viewport.foreground_target,
                         vRGBAu(Val(~zero(UInt32))),
                         1)
@@ -109,10 +110,11 @@ function render_to_framebuffer(callback_draw_world,
         callback_draw_world(RenderPass.foreground)
 
         # Draw background:
-        GL.set_buffer_data(viewport.ubo_write, Ref(FrameBufferWriteData(
+        #TOOD: Reuse the FrameBuffeRWriteData because it allocates on the heap
+        GL.set_buffer_data(viewport.ubo_write, FrameBufferWriteData(
             GL.get_ogl_handle(GL.get_view(viewport.foreground_depth)),
             false
-        )))
+        ))
         GL.target_clear(viewport.background_target,
                         vRGBAu(Val(~zero(UInt32))),
                         1)

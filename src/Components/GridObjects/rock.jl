@@ -116,9 +116,8 @@ GL.@std140 struct RockDataBufferElement
     packed_densities::v2u # Each density value is a normalizied ubyte
 end
 const UBO_CODE_ROCK_DATA_ELEMENT = """
-    struct RockDataElement {
-        ivec4 worldGridPos;
-        uvec2 packedMineralDensities;
+    struct RockDataBufferElement {
+        $(glsl_decl(RockDataBufferElement))
     };
 
     //Unpacks the densities of each mineral,
@@ -139,7 +138,7 @@ const UBO_CODE_ROCK_DATA_ELEMENT = """
         );
     }
 """
-@inline normalize_float_as_uint(f::AbstractFloat, U) = convert(U, clamp(f * typemax(U), 0, typemax(U)))
+@inline normalize_float_as_uint(f::AbstractFloat, U) = convert(U, round(clamp(f * typemax(U), 0, typemax(U))))
 function pack_rock_densities_for_gpu(d::PerMineral{<:AbstractFloat})
     d_normalized_uint = normalize_float_as_uint.(d.data, Ref(UInt8))
     d_normalized_uint_full = convert.(Ref(UInt32), d_normalized_uint)
@@ -158,29 +157,28 @@ end
 #    unrelated to ECS world chunk size.
 const ROCK_BUFFER_CHUNK_SIZE = v3i(8, 8, 8)
 const ROCK_BUFFER_CHUNK_LENGTH = prod(ROCK_BUFFER_CHUNK_SIZE)
-const ROCK_BUFFER_CHUNK_BYTE_SIZE = ROCK_BUFFER_CHUNK_LENGTH * sizeof(RockDataBufferElement)
+const ROCK_BUFFER_CHUNK_BYTE_SIZE = ROCK_BUFFER_CHUNK_LENGTH * block_byte_size(RockDataBufferElement)
 const INFORMED_ROCK_BUFFER_SIZE_YET = Ref(false)
 
 
 GL.@std140 struct RockDataChunk
     count::UInt32
-    elements::NTuple{prod(ROCK_BUFFER_CHUNK_SIZE), RockDataBufferElement}
+    elements::GL.StaticBlockArray{prod(ROCK_BUFFER_CHUNK_SIZE), RockDataBufferElement}
 end
 const UBO_INDEX_ROCK_DATA = 4
-const UBO_NAME_ROCK_DATA = "RockData"
+const UBO_NAME_ROCK_DATA = "RockDataChunk"
 const UBO_CODE_ROCK_DATA = """
     $UBO_CODE_ROCK_DATA_ELEMENT
     layout(std140, binding=$(UBO_INDEX_ROCK_DATA - 1)) uniform $UBO_NAME_ROCK_DATA {
-        uint count;
-        RockDataElement elements[$(prod(ROCK_BUFFER_CHUNK_SIZE))];
+        $(glsl_decl(RockDataChunk))
     } u_rock_chunk;
 """
 
 const SHADER_CODE_ROCK_COLORING = """
-    MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, RockDataElement data) {
+    MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, RockDataBufferElement data) {
         //Get the density of each mineral.
         float mineralDensities[$(N_MINERALS + 1)];
-        unpackRockDensities(data.packedMineralDensities, mineralDensities);
+        unpackRockDensities(data.packed_densities, mineralDensities);
 
         //Define the surface properties of each mineral, and plain rock.
         MaterialSurface mineralSurfaces[$(N_MINERALS + 1)];
@@ -222,7 +220,6 @@ const SHADER_CODE_ROCK_COLORING = """
         return mineralSurfaces[densestI];
     }
 """
-
 
 
 "Gets the rock render chunk covering a given grid postion"
@@ -272,7 +269,7 @@ end
         push!(this.bulk.on_element_added, (args...) -> rock_render_create(this, args...))
         push!(this.bulk.on_element_removed, (args...) -> rock_render_destroy(this, args...))
 
-        str = """
+        open(io -> (this.shader = GL.bp_glsl_str("""
             $UBO_CODE_ROCK_DATA
             #START_VERTEX
                 void main() { gl_Position = vec4(0, 0, 0, 1); }
@@ -291,18 +288,18 @@ end
                     if (gl_PrimitiveIDIn >= u_rock_chunk.count)
                         return;
                     gl_PrimitiveID = gl_PrimitiveIDIn; //Needed for frag shader to use it
-                    RockDataElement rock = u_rock_chunk.elements[gl_PrimitiveIDIn];
+                    RockDataBufferElement rock = u_rock_chunk.elements[gl_PrimitiveIDIn];
 
                     //Cube positions are centered around the grid cell.
                     //Remember that cell centers are at integer coordinates.
-                    vec3 center = vec3(rock.worldGridPos.xyz);
+                    vec3 center = vec3(rock.world_grid_pos.xyz);
                     vec2 offset = vec2(-0.5, 0.5);
 
                     #define VERT(offsetSwizzle, uv, normal) { \\
                         fIn_worldPos = center + offset.offsetSwizzle; \\
                         fIn_uv = vec2 uv; \\
                         fIn_normal = vec3 normal; \\
-                        gl_Position = u_world_cam.matrixViewProjection * vec4(fIn_worldPos, 1); \\
+                        gl_Position = u_world_cam.matrix_view_projection * vec4(fIn_worldPos, 1); \\
                         EmitVertex(); \\
                     }
                     #define FACE(normal, swizzleMinUV, swizzleMaxUMinV, swizzleMinUMaxV, swizzleMaxUV) { \\
@@ -329,13 +326,11 @@ end
                 $SHADER_CODE_ROCK_COLORING
 
                 void main() {
-                    RockDataElement rock = u_rock_chunk.elements[gl_PrimitiveID];
+                    RockDataBufferElement rock = u_rock_chunk.elements[gl_PrimitiveID];
                     MaterialSurface surf = getRockMaterial(fIn_worldPos, fIn_uv, fIn_normal, rock);
                     writeFramebuffer(surf);
                 }
-        """
-        open(io -> print(io, str), "TS.frag", "w")
-        this.shader = GL.bp_glsl_str(str)
+        """, debug_out=io)), "TS.frag", "w")
     end
     DESTRUCT() = begin
         close(this.shader)
@@ -348,8 +343,8 @@ end
     TICK() = begin
         # Upload any batched changes to chunks.
         for chunk_idx::v3i in this.chunks_that_need_reupload
-            (cpu::RockDataChunk, gpu::GL.Buffer) = rock_data_buffers[chunk_idx]
-            GL.set_buffer_data(gpu, Ref(cpu))
+            (cpu::RockDataChunk, gpu::GL.Buffer) = this.rock_data_buffers[chunk_idx]
+            GL.set_buffer_data(gpu, cpu)
         end
         empty!(this.chunks_that_need_reupload)
     end
@@ -371,46 +366,36 @@ end
 end
 
 function rock_render_create(renderer::Renderable_Rock, grid_pos::v3i, rock::Rock)
-    @shout
     chunk_idx = rock_render_chunk_idx(grid_pos)
-    @shout
     ubo_element = RockDataBufferElement(
-        v4u(grid_pos..., 0),
+        v4i(grid_pos..., 0),
         pack_rock_densities_for_gpu(rock.minerals)
     )
-    @shout
 
     local chunk::RockDataChunk,
           chunk_ubo::Buffer
     if !haskey(renderer.rock_data_buffers, chunk_idx)
-        @shout
         # Create a new chunk holding this single rock.
         chunk = RockDataChunk(1, ntuple(Val(ROCK_BUFFER_CHUNK_LENGTH)) do i
             if i == 1
                 return ubo_element
             else
-                return RockDataBufferElement(zero(v4u), zero(v2u))
+                return RockDataBufferElement(zero(v4i), zero(v2u))
             end
         end)
-        @shout
-        chunk_ubo = Buffer(true, [ chunk ])
-        @shout
+        chunk_ubo = Buffer(true, chunk)
     else
         # Add a new rock to the chunk.
-        @shout
         (chunk, chunk_ubo) = renderer.rock_data_buffers[chunk_idx]
-        @set! chunk.count += 1
-        @set! chunk.elements[chunk.count] = ubo_element
+        chunk.count += 1
+        chunk.elements[chunk.count] = ubo_element
 
         # Mark the chunk for GPU upload next tick.
         push!(renderer.chunks_that_need_reupload, chunk_idx)
-        @shout
     end
 
-    @shout
     renderer.rock_data_buffers[chunk_idx] = (chunk, chunk_ubo)
     renderer.rock_index_in_chunk[grid_pos] = chunk.count
-    @shout
 end
 function rock_render_destroy(renderer::Renderable_Rock, grid_pos::v3i, rock::Rock)
     chunk_idx = rock_render_chunk_idx(grid_pos)
@@ -422,8 +407,8 @@ function rock_render_destroy(renderer::Renderable_Rock, grid_pos::v3i, rock::Roc
     rock_idx = renderer.rock_index_in_chunk[grid_pos]
 
     # Delete the rock from the chunk.
-    @set! chunk.elements[rock_idx : chunk.count-1] = chunk.elements[rock_idx+1 : chunk.count]
-    @set! chunk.count -= 1
+    chunk.elements[rock_idx : chunk.count-1] = chunk.elements[rock_idx+1 : chunk.count]
+    chunk.count -= 1
     delete!(renderer.rock_index_in_chunk, grid_pos)
 
     # Update or destroy the chunk itself.

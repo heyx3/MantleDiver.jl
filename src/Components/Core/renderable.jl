@@ -30,21 +30,11 @@ function CameraDataBuffer(cam::Cam3D{Float32})
     )
 end
 const UBO_INDEX_CAM_DATA = 3
-const UBO_NAME_CAM_DATA = "WorldCameraData"
+const UBO_NAME_CAM_DATA = "CameraDataBuffer"
 const UBO_CODE_CAM_DATA = """
     layout(std140, binding=$(UBO_INDEX_CAM_DATA-1)) uniform $UBO_NAME_CAM_DATA {
-        mat4 matrixView;
-        mat4 matrixProjection;
-        mat4 matrixViewProjection;
 
-        mat4 matrixInverseView;
-        mat4 matrixInverseProjection;
-        mat4 matrixInverseViewProjection;
-
-        vec4 pos;
-        vec4 forward;
-        vec4 up;
-        vec4 right;
+        $(glsl_decl(CameraDataBuffer))
     } u_world_cam;
 """
 

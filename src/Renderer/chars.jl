@@ -101,20 +101,15 @@ GL.@std140 struct CharRenderAssetBuffer
     tex_palette::UInt64
     n_colors::UInt32
     n_shapes::UInt32
-    n_densities_per_shape::NTuple{N_CHAR_SHAPES, UInt32} # inclusive, 0-bassed
+    n_densities_per_shape::StaticBlockArray{N_CHAR_SHAPES, UInt32} # inclusive, 0-bassed
     #TODO: Provide some weighting functions for each char shape -- exponent curve, relative importance of min and max density
 end
 const UBO_INDEX_CHAR_RENDERING = 1
 
-const UBO_NAME_CHAR_RENDERING = "CharRendering"
+const UBO_NAME_CHAR_RENDERING = "CharRenderAssetBuffer"
 const UBO_CODE_CHAR_RENDERING = """
 layout (std140, binding=$(UBO_INDEX_CHAR_RENDERING-1)) uniform $UBO_NAME_CHAR_RENDERING {
-    sampler2D tex_uv_lookup;
-    sampler2D tex_atlas;
-    sampler2D tex_palette;
-    uint n_colors;
-    uint n_shapes;
-    uint n_densities_per_shape[$N_CHAR_SHAPES];
+    $(glsl_decl(CharRenderAssetBuffer))
 } u_char_rendering;
 
 //Gets the UV rectangle (min=XY, max=ZW)
@@ -127,21 +122,21 @@ vec4 charAtlasMinMaxUV(uint shape, float density) {
     uint densityU = clamp(uint(density * maxDensity),
                           uint(0), uint(maxDensity));
 
-    return texelFetch(u_char_rendering.tex_uv_lookup, ivec2(densityU, shape), 0);
+    return texelFetch(sampler2D(u_char_rendering.tex_uv_lookup), ivec2(densityU, shape), 0);
 }
 
 //Gets the rendered greyscale font character, at the given UV,
 //    using the given shape and density values to select a char.
 float readChar(uint shape, float density, vec2 uv) {
     vec4 uvRect = charAtlasMinMaxUV(shape, density);
-    return textureLod(u_char_rendering.tex_atlas,
+    return textureLod(sampler2D(u_char_rendering.tex_atlas),
                       mix(uvRect.xy, uvRect.zw, uv),
                       0.0).r;
 }
 
 //Gets a paletted color value.
 vec3 readColor(uint color) {
-    return texelFetch(u_char_rendering.tex_palette,
+    return texelFetch(sampler2D(u_char_rendering.tex_palette),
                       ivec2(clamp(color, uint(0), uint(u_char_rendering.n_colors - 1)),
                             0),
                       0).rgb;

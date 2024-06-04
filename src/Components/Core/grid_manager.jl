@@ -85,14 +85,16 @@ end
     bulk_entities::Dict{Type, Any} # Each type of "bulk" entity is assumed to be a world singleton.
 
     CONSTRUCT() = (this.chunks = Dict{v3i, GridChunk}())
-    function DESTRUCT()
-        # Destroy all chunks.
-        for chunk in collect(values(this.chunks))
-            remove_component(entity, chunk)
-        end
-        # Destroy all bulk entities.
-        for bulk_component in values(this.bulk_entities)
-            remove_component(bulk_component.entity, bulk_component)
+    function DESTRUCT(is_entity_dying::Bool)
+        if !is_entity_dying
+            # Destroy all chunks.
+            for chunk in collect(values(this.chunks))
+                remove_component(entity, chunk)
+            end
+            # Destroy all bulk entities.
+            for bulk_component in values(this.bulk_entities)
+                remove_component(bulk_component.entity, bulk_component)
+            end
         end
     end
 end

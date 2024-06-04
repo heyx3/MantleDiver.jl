@@ -12,7 +12,8 @@ mutable struct Mission
 
     buffer_renderables::Vector{Renderable}
 
-    function Mission(loadout::PlayerLoadout
+    function Mission(loadout::PlayerLoadout,
+                     player_view_resolution::v2i
                      ;
                      seed::UInt = rand(UInt))
         PLAYER_START_POS = v3i(0, 0, 0)
@@ -32,16 +33,18 @@ mutable struct Mission
         player = make_player(world, PLAYER_START_POS)
         check_for_fall(player, grid)
 
-        cam_ubo = Buffer(true, Ref(CameraDataBuffer(Cam3D{Float32}())))
+        cam_ubo = Buffer(true, CameraDataBuffer)
 
-        return new(world, grid, loadout,
-                   player,
-                   get_component.(Ref(player), (
-                       ContinuousPosition,
-                       WorldOrientation
-                   ))...,
-                   Vector{Renderable}(),
-                   cam_ubo)
+        return new(
+            world, grid,
+            loadout, player,
+            get_component.(Ref(player), (
+                ContinuousPosition,
+                WorldOrientation
+            ))...,
+            WorldViewport(player_view_resolution), cam_ubo,
+            Vector{Renderable}()
+        )
     end
 end
 
@@ -79,7 +82,8 @@ function render_mission(mission::Mission, assets::Assets, settings::ViewportDraw
     )
 
     # Set up the player camera data buffer.
-    GL.set_buffer_data(mission.player_camera_ubo, Ref(CameraDataBuffer(Bplus.Cam3D{Float32}(
+    #TODO: Re-use a CameaDataBuffer instance so we're not constantly allocating it.
+    GL.set_buffer_data(mission.player_camera_ubo, CameraDataBuffer(Bplus.Cam3D{Float32}(
         pos = mission.player_pos.pos,
         forward = q_apply(mission.player_rot.rot, WORLD_FORWARD),
         up = q_apply(mission.player_rot.rot, WORLD_UP),
@@ -88,7 +92,7 @@ function render_mission(mission::Mission, assets::Assets, settings::ViewportDraw
             fov_degrees = 90,
             aspect_width_over_height = 1
         )
-    ))))
+    )))
     GL.set_uniform_block(mission.player_camera_ubo, UBO_INDEX_CAM_DATA)
 
     # Render into the main framebuffer.

@@ -10,10 +10,31 @@ mutable struct DebugGui
     game_view_sorted_elements::Vector{Tuple{DebugGuiVisuals, Entity, Int64}}
     debug_gui_speed::E_DebugGuiSpeed
     maneuver_next_move_flip::Int8
+    foreground_viz_target::Target
+    background_viz_target::Target
 
-    DebugGui() = new([ ], DebugGuiSpeed.play, 1)
+    DebugGui() = new(
+        [ ], DebugGuiSpeed.play, 1,
+        Target(
+            v2u(512, 512),
+            SimpleFormat(FormatTypes.normalized_uint,
+                         SimpleFormatComponents.RGBA,
+                         SimpleFormatBitDepths.B8),
+            DepthStencilFormats.depth_16u
+        ),
+        Target(
+            v2u(512, 512),
+            SimpleFormat(FormatTypes.normalized_uint,
+                         SimpleFormatComponents.RGBA,
+                         SimpleFormatBitDepths.B8),
+            DepthStencilFormats.depth_16u
+        )
+    )
 end
-Base.close(dg::DebugGui) = nothing
+Base.close(dg::DebugGui) = close.((
+    dg.foreground_viz_target,
+    dg.background_viz_target
+))
 
 
 ############################################
