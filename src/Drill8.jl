@@ -62,10 +62,6 @@ include("mission.jl")
 include("debug_assets.jl")
 include("debug_gui_widgets.jl")
 
-@bp_enum(DebugGuiTab,
-    game,
-    assets
-)
 
 function julia_main()::Cint
     @game_loop begin
@@ -88,10 +84,6 @@ function julia_main()::Cint
             @d8_debug begin
                 debug_assets = DebugAssets()
                 debug_gui = DebugGui()
-                current_tab::E_DebugGuiTab = DebugGuiTab.game
-                current_speed::E_DebugGuiSpeed = DebugGuiSpeed.play
-                fast_forward_speed::Int = 2
-                min_asset_tex_length::Float32 = 128
             end
         end
 
@@ -115,19 +107,19 @@ function julia_main()::Cint
 
             # Tick the mission, and quit if it ends.
             continue_mission::Bool = if @d8_debug
-                if current_speed == DebugGuiSpeed.play
+                if debug_gui.gameplay_speed == DebugGuiSpeed.play
                     tick!(mission, LOOP.delta_seconds)
-                elseif current_speed == DebugGuiSpeed.pause
+                elseif debug_gui.gameplay_speed == DebugGuiSpeed.pause
                     true
-                elseif current_speed == DebugGuiSpeed.fast_forward
+                elseif debug_gui.gameplay_speed == DebugGuiSpeed.fast_forward
                     b = true
-                    for i in 1:fast_forward_speed
+                    for i in 1:debug_gui.fast_forward_speed
                         b |= tick!(mission, LOOP.delta_seconds)
                         (!b) && break
                     end
                     b
                 else
-                    error("Unhandled case: ", current_speed)
+                    error("Unhandled case: ", debug_gui.gameplay_speed)
                 end
             else
                 tick!(mission, LOOP.delta_seconds)
@@ -167,33 +159,7 @@ function julia_main()::Cint
                         end
 
                         gui_tab_item("Assets") do
-                            @c CImGui.SliderFloat(
-                                "Min Size", &min_asset_tex_length,
-                                1, 1024
-                            )
-
-                            function show_tex(name::String, tex::GL.Texture)
-                                view = GL.get_view(tex, GL.TexSampler{2}(
-                                    pixel_filter=GL.PixelFilters.rough
-                                ))
-                                handle = GUI.gui_tex_handle(view)
-                                size::v2u = GL.tex_size(tex)
-
-                                # If the texture is very small, blow it up.
-                                scale_up_ratio = min_asset_tex_length / min(size)
-                                draw_size::v2f = if scale_up_ratio > 1
-                                    size * scale_up_ratio
-                                else
-                                    size
-                                end
-
-                                CImGui.Text(name * " ($(size.x)x$(size.y))")
-                                CImGui.Image(handle, draw_size)
-                                CImGui.Spacing()
-                            end
-                            show_tex("Char Atlas", assets.chars_atlas)
-                            show_tex("Char UV Lookup", assets.chars_atlas_lookup)
-                            show_tex("Palette", assets.palette)
+                            gui_visualize_textures(debug_gui, debug_assets, mission, assets)
                         end
                     end
                 end

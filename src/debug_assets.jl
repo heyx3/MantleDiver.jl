@@ -91,8 +91,8 @@ function debug_render_uint_texture_viz(assets::DebugAssets,
                                        gradient::NTuple{4, v4f} = (
                                            v4f(0.5, 0.5, 0.5, 0.5),
                                            v4f(0.5, 0.5, 0.5, 0.5),
-                                           v4f(1.5, 0.3, 2.0, 0),
-                                           v4f(0.3, 0.5, 0.1, 0)
+                                           v4f(1.5, 0.3, 2.0, 0.8),
+                                           v4f(0.3, 0.5, 0.1, 0.8)
                                        ),
                                        transparency_checkerboard_scale::Float32 = @f32(4))
     set_uniform(assets.uint_tex_display_shader, "u_tex", input)
@@ -106,4 +106,5 @@ function debug_render_uint_texture_viz(assets::DebugAssets,
 
     target_activate(output)
     render_mesh(service_BasicGraphics().screen_triangle, assets.uint_tex_display_shader)
+    target_activate(nothing)
 end

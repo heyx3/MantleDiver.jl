@@ -7,14 +7,25 @@
 )
 
 mutable struct DebugGui
+    # Gameplay speed control:
+    gameplay_speed::E_DebugGuiSpeed
+    fast_forward_speed::Int32
+
+    # Debug rendering the game:
     game_view_sorted_elements::Vector{Tuple{DebugGuiVisuals, Entity, Int64}}
-    debug_gui_speed::E_DebugGuiSpeed
+
+    # Debug maneuver interface:
     maneuver_next_move_flip::Int8
+
+    # Texture visualization panel:
+    tex_viz_min_length::Float32
     foreground_viz_target::Target
     background_viz_target::Target
 
     DebugGui() = new(
-        [ ], DebugGuiSpeed.play, 1,
+        DebugGuiSpeed.play, 3,
+        [ ], 1,
+        128,
         Target(
             v2u(512, 512),
             SimpleFormat(FormatTypes.normalized_uint,
@@ -224,7 +235,7 @@ function gui_game_speed(gui::DebugGui, assets::DebugAssets)
             else
                 error("Unhandled: ", speed)
             end
-            tint = if speed == gui.debug_gui_speed
+            tint = if speed == gui.gameplay_speed
                 v4f(1, 1, 1, 1)
             else
                 v4f(0.5, 0.5, 0.5, 1)
@@ -235,12 +246,68 @@ function gui_game_speed(gui::DebugGui, assets::DebugAssets)
                                       (0, 0), (1, 1),
                                       -1, (0, 0, 0, 0),
                                       tint.data)
-                    gui.debug_gui_speed = speed
+                    gui.gameplay_speed = speed
                 end
             end
             CImGui.SameLine()
         end
+
+        CImGui.Dummy(40, 0.001)
+        CImGui.SameLine()
+
+        @c CImGui.SliderInt(
+            "Fast-Forward Speed", &gui.fast_forward_speed,
+            1, 10
+        )
+
         # Undo the last SameLine()
         CImGui.Dummy(0.0001, 0.0001)
     end
+end
+
+
+###############################################
+##   Texture asset visualizations
+
+function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
+                                mission::Mission, assets::Assets)
+    @c CImGui.SliderFloat(
+        "Min Size", &gui.tex_viz_min_length,
+        1, 1024
+    )
+
+    function show_tex(name::String, tex::GL.Texture)
+        view = GL.get_view(tex, GL.TexSampler{2}(
+            pixel_filter=GL.PixelFilters.rough
+        ))
+        handle = GUI.gui_tex_handle(view)
+        size::v2u = GL.tex_size(tex)
+
+        # If the texture is very small, blow it up.
+        scale_up_ratio = gui.tex_viz_min_length / min(size)
+        draw_size::v2f = if scale_up_ratio > 1
+            size * scale_up_ratio
+        else
+            size
+        end
+
+        CImGui.Text(name * " ($(size.x)x$(size.y))")
+        CImGui.Image(handle, draw_size)
+        CImGui.Spacing()
+    end
+    show_tex("Char Atlas", assets.chars_atlas)
+    show_tex("Char UV Lookup", assets.chars_atlas_lookup)
+    show_tex("Palette", assets.palette)
+    debug_render_uint_texture_viz(
+        debug_assets,
+        mission.player_viewport.foreground,
+        gui.foreground_viz_target
+    )
+    show_tex("Player View: Foreground", gui.foreground_viz_target.attachment_colors[1].tex)
+    debug_render_uint_texture_viz(
+        debug_assets,
+        mission.player_viewport.background,
+        gui.background_viz_target
+    )
+    show_tex("Player View: Background", gui.background_viz_target.attachment_colors[1].tex)
 end
