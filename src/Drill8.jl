@@ -77,32 +77,35 @@ function julia_main()::Cint
                 v2i(200, 200)
                 #, seed = 0x12345
             )
+            @d8_debug(@check_gl_logs "After mission creation")
+
             assets = Assets()
+            @d8_debug(@check_gl_logs "After asset creation")
 
             # In debug mode provide various GUI widgets,
             #    one of which will contain the rendered scene.
             @d8_debug begin
                 debug_assets = DebugAssets()
+                @check_gl_logs "After DebugAssets creation"
                 debug_gui = DebugGui()
+                @check_gl_logs "After DebugGui creation"
+                debug_game_render = Target(
+                    v2u(1280, 720),
+                    GL.SimpleFormat(
+                        GL.FormatTypes.normalized_uint,
+                        GL.SimpleFormatComponents.RGB,
+                        GL.SimpleFormatBitDepths.B8
+                    ),
+                    GL.DepthStencilFormats.depth_16u
+                )
+                @check_gl_logs "After DebugGameRender creation"
             end
         end
 
         LOOP = begin
+            @d8_debug(@check_gl_logs "Start of iteration " LOOP.frame_idx)
             if GLFW.WindowShouldClose(LOOP.context.window)
                 break
-            end
-            # Grab any OpenGL warnings/errors and log them.
-            @d8_debug for log in GL.pull_gl_logs()
-                log_msg() = sprint(show, log)
-                if log.severity in (DebugEventSeverities.high, DebugEventSeverities.medium)
-                    @error "OpenGL error: $(log_msg())"
-                elseif log.severity == DebugEventSeverities.low
-                    @warn "OpenGL warning: $(log_msg())"
-                elseif log.severity == DebugEventSeverities.none
-                    @info "OpenGL message: $(log_msg())"
-                else
-                    error("Unhandled case: ", log.severity)
-                end
             end
 
             # Tick the mission, and quit if it ends.
@@ -124,13 +127,25 @@ function julia_main()::Cint
             else
                 tick!(mission, LOOP.delta_seconds)
             end
+            @d8_debug(@check_gl_logs "After mission tick")
             (!continue_mission) && break
 
-            # Draw the game.
-            if !@d8_debug
-                GL.clear_screen(vRGBAf(1, 0, 1, 0))
-                #TODO: Render the world normally.
-            else
+            # Render the player's POV.
+            player_viewport_settings = ViewportDrawSettings(
+                
+            )
+            render_mission(mission, assets, player_viewport_settings)
+            @d8_debug(@check_gl_logs "After mission render")
+
+            # Draw the game to the screen (or in debug, to a Target).
+            @d8_debug target_activate(debug_game_render)
+            GL.clear_screen(vRGBAf(1, 0, 1, 0))
+            post_process_framebuffer(mission.player_viewport, assets, player_viewport_settings)
+            @d8_debug target_activate(nothing)
+            @d8_debug(@check_gl_logs "After mission post-processing")
+
+            # Draw the debugging GUI.
+            @d8_debug begin
                 screen_size = convert(v2f, GL.get_window_size())
                 CImGui.SetNextWindowPos(v2i(0, 0))
                 CImGui.SetNextWindowSize(screen_size)
@@ -139,6 +154,14 @@ function julia_main()::Cint
 
                     # Draw the tabs.
                     gui_tab_views("#DebugTabs") do
+
+                        @check_gl_logs "Before any debug GUI tabs"
+
+                        gui_tab_item("Game View") do
+                            CImGui.Image(GUI.gui_tex_handle(debug_game_render.attachment_colors[1].tex),
+                                         convert(v2f, debug_game_render.size))
+                        end
+                        @check_gl_logs "After 'Game View' tab"
 
                         gui_tab_item("Game View 2D") do
                             game_view_tab_region = Box2Df(
@@ -157,10 +180,12 @@ function julia_main()::Cint
 
                             gui_debug_maneuvers(mission, debug_gui)
                         end
+                        @check_gl_logs "After 'Game View 2D' tab"
 
                         gui_tab_item("Assets") do
                             gui_visualize_textures(debug_gui, debug_assets, mission, assets)
                         end
+                        @check_gl_logs "After 'Assets' tab"
                     end
                 end
             end

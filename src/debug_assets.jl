@@ -104,7 +104,9 @@ function debug_render_uint_texture_viz(assets::DebugAssets,
     set_uniform(assets.uint_tex_display_shader,
                 "u_transparentCheckerboardScale", transparency_checkerboard_scale)
 
+    view_activate(input)
     target_activate(output)
-    render_mesh(service_BasicGraphics().screen_triangle, assets.uint_tex_display_shader)
+        render_mesh(service_BasicGraphics().screen_triangle, assets.uint_tex_display_shader)
     target_activate(nothing)
+    view_deactivate(input)
 end

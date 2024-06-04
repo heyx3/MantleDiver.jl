@@ -69,7 +69,7 @@ end
 
 "
 Renders the mission into the player's viewport.
-You may display this viewport with `post_process_framebuffer(mission.player_viewport)`.
+You may display this viewport with `post_process_framebuffer(mission.player_viewport, ...)`.
 "
 function render_mission(mission::Mission, assets::Assets, settings::ViewportDrawSettings)
     # Collect renderables.
@@ -87,19 +87,23 @@ function render_mission(mission::Mission, assets::Assets, settings::ViewportDraw
         pos = mission.player_pos.pos,
         forward = q_apply(mission.player_rot.rot, WORLD_FORWARD),
         up = q_apply(mission.player_rot.rot, WORLD_UP),
-        projection = PerspectiveProjection{Float32}(
+        projection = Bplus.PerspectiveProjection{Float32}(
             clip_range = IntervalF(min=0.05, max=1000),
-            fov_degrees = 90,
+            vertical_fov_degrees = 90,
             aspect_width_over_height = 1
         )
     )))
+    @d8_debug(@check_gl_logs "After updating camera Buffer")
     GL.set_uniform_block(mission.player_camera_ubo, UBO_INDEX_CAM_DATA)
+    @d8_debug(@check_gl_logs "After picking camera UBO")
 
     # Render into the main framebuffer.
-    render_view(mission.player_viewport, assets, settings, output) do pass::E_RenderPass
+    render_to_framebuffer(mission.player_viewport, assets) do pass::E_RenderPass
         for renderable in mission.buffer_renderables
             renderable.render(render_data)
+            @d8_debug(@check_gl_logs "After rendering " typeof(renderable))
         end
         return nothing # output of render() is type-unstable, so don't return it
     end
+    @d8_debug(@check_gl_logs "After rendering into framebuffer")
 end
