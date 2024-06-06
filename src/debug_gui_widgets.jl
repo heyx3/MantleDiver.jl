@@ -276,9 +276,12 @@ function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
         1, 1024
     )
 
-    function show_tex(name::String, tex::GL.Texture)
+    function show_tex(name::String, tex::GL.Texture,
+                      # Render targets need their Y coordinate flipped going from OpenGL to Dear ImGUI.
+                      flip_uv_y::Bool = false)
         view = GL.get_view(tex, GL.TexSampler{2}(
-            pixel_filter=GL.PixelFilters.rough
+            pixel_filter=GL.PixelFilters.rough,
+            mip_filter=GL.PixelFilters.rough
         ))
         handle = GUI.gui_tex_handle(view)
         size::v2u = GL.tex_size(tex)
@@ -291,23 +294,38 @@ function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
             size
         end
 
-        CImGui.Text(name * " ($(size.x)x$(size.y))")
-        CImGui.Image(handle, draw_size)
+        # If the texture is very big, shrink it down.
+        scale_down_ratio = 256 / max(size)
+        if scale_down_ratio < 1
+            draw_size *= scale_down_ratio
+        end
+
+        CImGui.Text(name * " ($(size.x)x$(size.y)) (as $(draw_size.x)x$(draw_size.y))")
+        CImGui.Image(handle, draw_size,
+                     (0, flip_uv_y ? 1 : 0),
+                     (1, flip_uv_y ? 0 : 1))
         CImGui.Spacing()
     end
-    show_tex("Char Atlas", assets.chars_atlas)
+    let tex = gui.foreground_viz_target.attachment_colors[1].tex
+        debug_render_uint_texture_viz(
+            debug_assets,
+            mission.player_viewport.foreground,
+            gui.foreground_viz_target
+        )
+        show_tex("Player View: Foreground", tex, true)
+    end
+    let tex = mission.player_viewport.foreground_depth
+        show_tex("Player View: Foreground Depth", tex, true)
+    end
+    let tex = gui.background_viz_target.attachment_colors[1].tex
+        debug_render_uint_texture_viz(
+            debug_assets,
+            mission.player_viewport.background,
+            gui.background_viz_target
+        )
+        show_tex("Player View: Background", tex, true)
+    end
+    show_tex("Char Atlas", assets.chars_atlas, true)
     show_tex("Char UV Lookup", assets.chars_atlas_lookup)
     show_tex("Palette", assets.palette)
-    debug_render_uint_texture_viz(
-        debug_assets,
-        mission.player_viewport.foreground,
-        gui.foreground_viz_target
-    )
-    show_tex("Player View: Foreground", gui.foreground_viz_target.attachment_colors[1].tex)
-    debug_render_uint_texture_viz(
-        debug_assets,
-        mission.player_viewport.background,
-        gui.background_viz_target
-    )
-    show_tex("Player View: Background", gui.background_viz_target.attachment_colors[1].tex)
 end

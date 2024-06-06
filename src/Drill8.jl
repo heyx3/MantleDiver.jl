@@ -8,30 +8,15 @@ using CImGui, GLFW, FreeType, ImageIO, FileIO,
 using Bplus; @using_bplus
 
 # Reconfigure B+'s coordinate system to match Dear ImGUI.
-Bplus.BplusCore.Math.get_right_handed() = false
+# Bplus.BplusCore.Math.get_right_handed() = false
 const WORLD_FORWARD = v3f(1, 0, 0)
-const WORLD_RIGHT = v3f(0, 1, 0)
+const WORLD_RIGHT = v3f(0, -1, 0)
 const WORLD_UP = v3f(0, 0, 1)
 
 const PI2 = Float32(2π)
 
 # Define @d8_assert and @d8_debug
 Bplus.@make_toggleable_asserts d8_
-
-
-"
-Prints the current file and line, along with any data you pass in.
-Helps pin down crashes that don't leave a clear stack trace.
-"
-macro shout(data...)
-    return quote
-        print(stderr, '\n', $(string(__source__.file)), ":", $(string(__source__.line)))
-        if $(!isempty(data))
-            print(stderr, " -- ", $(esc.(data)...))
-        end
-        println(stderr, '\n')
-    end
-end
 
 
 include("Renderer/shader_utils.jl")
@@ -74,7 +59,7 @@ function julia_main()::Cint
             mission = Mission(
                 PlayerLoadout(
                 ),
-                v2i(200, 200)
+                v2i(50, 50)
                 #, seed = 0x12345
             )
             @d8_debug(@check_gl_logs "After mission creation")
@@ -89,8 +74,8 @@ function julia_main()::Cint
                 @check_gl_logs "After DebugAssets creation"
                 debug_gui = DebugGui()
                 @check_gl_logs "After DebugGui creation"
-                debug_game_render = Target(
-                    v2u(1280, 720),
+                debug_game_render = GL.Target(
+                    convert(v2u, mission.player_viewport.resolution * 14),
                     GL.SimpleFormat(
                         GL.FormatTypes.normalized_uint,
                         GL.SimpleFormatComponents.RGB,
@@ -100,6 +85,8 @@ function julia_main()::Cint
                 )
                 @check_gl_logs "After DebugGameRender creation"
             end
+
+            GLFW.ShowWindow(LOOP.context.window)
         end
 
         LOOP = begin
@@ -159,7 +146,9 @@ function julia_main()::Cint
 
                         gui_tab_item("Game View") do
                             CImGui.Image(GUI.gui_tex_handle(debug_game_render.attachment_colors[1].tex),
-                                         convert(v2f, debug_game_render.size))
+                                         convert(v2f, debug_game_render.size),
+                                         # Flip UV y:
+                                         (0,1), (1,0))
                         end
                         @check_gl_logs "After 'Game View' tab"
 
@@ -192,9 +181,11 @@ function julia_main()::Cint
         end
 
         TEARDOWN = begin
+            @d8_debug begin
+                close(debug_gui)
+                close(debug_assets)
+            end
             close(mission)
-            close(debug_gui)
-            close(debug_assets)
             close(assets)
         end
     end

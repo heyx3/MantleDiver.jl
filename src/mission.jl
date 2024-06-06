@@ -15,7 +15,7 @@ mutable struct Mission
     function Mission(loadout::PlayerLoadout,
                      player_view_resolution::v2i
                      ;
-                     seed::UInt = rand(UInt))
+                     seed::UInt = @d8_debug(0x123345678911, rand(UInt)))
         PLAYER_START_POS = v3i(0, 0, 0)
 
         @d8_debug println(stderr, "Seed used: ", seed)
@@ -72,6 +72,8 @@ Renders the mission into the player's viewport.
 You may display this viewport with `post_process_framebuffer(mission.player_viewport, ...)`.
 "
 function render_mission(mission::Mission, assets::Assets, settings::ViewportDrawSettings)
+    @d8_debug(@check_gl_logs "Before rendering into framebuffer")
+
     # Collect renderables.
     empty!(mission.buffer_renderables)
     append!(mission.buffer_renderables, (c for (c, e) in get_components(mission.ecs, Renderable)))
@@ -93,9 +95,7 @@ function render_mission(mission::Mission, assets::Assets, settings::ViewportDraw
             aspect_width_over_height = 1
         )
     )))
-    @d8_debug(@check_gl_logs "After updating camera Buffer")
     GL.set_uniform_block(mission.player_camera_ubo, UBO_INDEX_CAM_DATA)
-    @d8_debug(@check_gl_logs "After picking camera UBO")
 
     # Render into the main framebuffer.
     render_to_framebuffer(mission.player_viewport, assets) do pass::E_RenderPass
@@ -105,5 +105,6 @@ function render_mission(mission::Mission, assets::Assets, settings::ViewportDraw
         end
         return nothing # output of render() is type-unstable, so don't return it
     end
+
     @d8_debug(@check_gl_logs "After rendering into framebuffer")
 end

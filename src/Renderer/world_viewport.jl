@@ -93,17 +93,12 @@ function render_to_framebuffer(callback_draw_world,
                 GL.get_ogl_handle(GL.get_view(assets.blank_depth_tex)),
                 true
             ))
-            @d8_debug(@check_gl_logs "Before clearing foreground")
             GL.target_clear(viewport.foreground_target,
                             vRGBAu(Val(~zero(UInt32))),
                             1)
-            @d8_debug(@check_gl_logs "After clearing foreground")
             GL.target_clear(viewport.foreground_target, Float32(1))
-            @d8_debug(@check_gl_logs "After clearing foreground-depth")
             GL.target_activate(viewport.foreground_target)
-            @d8_debug(@check_gl_logs "After activating foreground Target")
             callback_draw_world(RenderPass.foreground)
-            @d8_debug(@check_gl_logs "After rendering foreground")
 
             # Draw background:
             #TOOD: Reuse the FrameBuffeRWriteData because it allocates on the heap
@@ -111,17 +106,12 @@ function render_to_framebuffer(callback_draw_world,
                 GL.get_ogl_handle(GL.get_view(viewport.foreground_depth)),
                 false
             ))
-            @d8_debug(@check_gl_logs "Before clearing background")
             GL.target_clear(viewport.background_target,
                             vRGBAu(Val(~zero(UInt32))),
                             1)
-            @d8_debug(@check_gl_logs "After clearing background")
             GL.target_clear(viewport.background_target, Float32(1))
-            @d8_debug(@check_gl_logs "After clearing background-depth")
             GL.target_activate(viewport.background_target)
-            @d8_debug(@check_gl_logs "After activating background target")
             callback_draw_world(RenderPass.background)
-            @d8_debug(@check_gl_logs "After rendering background")
         end end end end end
     GL.target_activate(nothing)
 end

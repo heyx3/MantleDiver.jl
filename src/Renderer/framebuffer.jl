@@ -82,7 +82,7 @@ uvec2 packForeground(MaterialSurface surf)
 {
     return uvec2(
         packShape(surf.foregroundShape) |
-            packShape(surf.foregroundColor),
+            packColor(surf.foregroundColor),
         packDensity(surf.foregroundDensity) |
             ((surf.isTransparent ? 1 : 0) << $(Int(DENSITY_BITS)))
     );

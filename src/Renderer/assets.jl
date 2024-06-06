@@ -66,8 +66,8 @@ function Assets()
     )
     char_atlas_uv_regions = Dict(
         c => Math.Box2Dd(
-            min = (min_inclusive(bi) - 0.5) / convert(v2d, CHAR_ATLAS_SIZE),
-            max = (max_inclusive(bi) + 1.0) / convert(v2d, CHAR_ATLAS_SIZE)
+            min = (min_inclusive(bi) - 1.0) / convert(v2d, CHAR_ATLAS_SIZE),
+            max = (max_inclusive(bi)) / convert(v2d, CHAR_ATLAS_SIZE)
         )
           for (c, bi) in char_atlas_pixel_regions
     )
@@ -76,21 +76,22 @@ function Assets()
     # Remember to put the space character behind each shape's list of ASCII chars!
     max_density = 1 + maximum(length.(values(ASCII_CHARS_BY_SHAPE_THEN_DENSITY)))
     n_shapes = length(CharShapeType.instances())
-    chars_atlas_lookup = Matrix{vRGBAf}(undef, reverse(Vec(n_shapes, max_density))...)
-    for density in 1:max_density
-        for shape in 1:n_shapes
-            shape_enum = CharShapeType.from(shape - 1)
-            by_density = ASCII_CHARS_BY_SHAPE_THEN_DENSITY[shape_enum]
+    chars_atlas_lookup = Matrix{vRGBAf}(undef, max_density, n_shapes)
+    for shape in 1:n_shapes
+        shape_enum = CharShapeType.from(shape - 1)
+        println("Shape ", shape, ": ", shape_enum)
+        by_density = ASCII_CHARS_BY_SHAPE_THEN_DENSITY[shape_enum]
+        for density in 1:max_density
             char = if density == 1
                 ' '
-            elseif density > length(by_density)+1
+            elseif density > length(by_density) + 1
                 ASCII_ERROR_CHAR
             else
                 by_density[density - 1]
             end
 
             uv_rect = char_atlas_uv_regions[char]
-            chars_atlas_lookup[TrueOrdering(Vec(shape, density))] = vRGBAf(
+            chars_atlas_lookup[density, shape] = vRGBAf(
                 min_inclusive(uv_rect)...,
                 max_inclusive(uv_rect)...
             )
@@ -208,6 +209,7 @@ function Assets()
         # Load the glyph into the texture atlas.
         # The axes need to be flipped for upload.
         byte_matrix = byte_matrix'
+        byte_matrix = byte_matrix[1:end, end:-1:1] # Flip Y
         pixel_region = char_atlas_pixel_regions[char]
         chars_atlas[pixel_region] = byte_matrix ./ @f32(255)
     end

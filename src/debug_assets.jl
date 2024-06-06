@@ -66,7 +66,7 @@ function DebugAssets()
                 );
 
                 //Show a checkerboard pattern underneath transparent pixels.
-                vec2 checkerPos = vec2(textureSize(u_tex, 0)) * u_transparentCheckerboardScale;
+                vec2 checkerPos = vec2(vOut_uv * textureSize(u_tex, 0)) * u_transparentCheckerboardScale;
                 ivec2 checkerboardMask2 = ivec2(floor(checkerPos)) % 2;
                 float checkerboardMask = (checkerboardMask2.x != checkerboardMask2.y) ? 0.0 : 1.0;
                 vec4 checkerboardColor = mix(
@@ -85,7 +85,7 @@ end
 "Renders the given uint texture into the given RGBA texture (or screen) using a palette"
 function debug_render_uint_texture_viz(assets::DebugAssets,
                                        input::Union{Texture, View},
-                                       output::Optional{Target}
+                                       output::Optional{GL.Target}
                                        ;
                                        uint_max_value::UInt32 = 0x000000ff,
                                        gradient::NTuple{4, v4f} = (
@@ -95,18 +95,28 @@ function debug_render_uint_texture_viz(assets::DebugAssets,
                                            v4f(0.3, 0.5, 0.1, 0.8)
                                        ),
                                        transparency_checkerboard_scale::Float32 = @f32(4))
-    set_uniform(assets.uint_tex_display_shader, "u_tex", input)
-    set_uniform(assets.uint_tex_display_shader, "u_maxPixelValue", uint_max_value)
+    render_state = GL.RenderState(
+        cull_mode = GL.FaceCullModes.off,
+        depth_test = GL.ValueTests.pass,
+        depth_write = false,
+        viewport = Box2Du(min=v2u(1, 1), size=(exists(output) ? output.size : GL.get_window_size))
+    )
+    GL.with_render_state(render_state) do
+        set_uniform(assets.uint_tex_display_shader, "u_tex", input)
+        set_uniform(assets.uint_tex_display_shader, "u_maxPixelValue", uint_max_value)
 
-    set_uniform.(Ref(assets.uint_tex_display_shader),
-                 ("u_colorBias", "u_colorScale", "u_colorOscillation", "u_colorPhase"),
-                 gradient)
-    set_uniform(assets.uint_tex_display_shader,
-                "u_transparentCheckerboardScale", transparency_checkerboard_scale)
+        set_uniform.(Ref(assets.uint_tex_display_shader),
+                    ("u_colorBias", "u_colorScale", "u_colorOscillation", "u_colorPhase"),
+                    gradient)
+        set_uniform(assets.uint_tex_display_shader,
+                    "u_transparentCheckerboardScale", transparency_checkerboard_scale)
 
-    view_activate(input)
-    target_activate(output)
-        render_mesh(service_BasicGraphics().screen_triangle, assets.uint_tex_display_shader)
-    target_activate(nothing)
-    view_deactivate(input)
+        view_activate(input)
+        GL.target_clear(output, v4f(0, 0, 0, 0))
+        target_activate(output)
+            render_mesh(service_BasicGraphics().screen_triangle,
+                        assets.uint_tex_display_shader)
+        target_activate(nothing)
+        view_deactivate(input)
+    end
 end
