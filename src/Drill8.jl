@@ -40,12 +40,12 @@ include("Components/PlayerCab/data.jl")
 include("Components/PlayerCab/maneuvers.jl")
 include("Components/PlayerCab/rendering.jl")
 
-include("entity_prototypes.jl")
-include("level_generators.jl")
-include("mission.jl")
+include("Game/entity_prototypes.jl")
+include("Game/level_generators.jl")
+include("Game/mission.jl")
 
-include("debug_assets.jl")
-include("debug_gui_widgets.jl")
+include("Debug/debug_assets.jl")
+include("Debug/debug_gui_widgets.jl")
 
 
 function julia_main()::Cint
