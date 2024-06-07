@@ -52,6 +52,17 @@ end
 function bulk_is_passable(b::BulkElements{T}, grid_idx::v3i)::Bool where {T}
     return b.is_passable(grid_idx, bulk_data_at(b, grid_idx))
 end
+"
+Notifies a bulk component that all its entities in the given chunk are being destroyed.
+By default, calls `bulk_destroy_at()` for each element in the chunk.
+"
+function bulk_destroy_chunk(b::BulkElements, chunk_idx::v3i, is_world_grid_dying::Bool)
+    for world_grid_idx::v3i in grid_idcs_in_chunk(chunk_idx)
+        if haskey(b.lookup, world_grid_idx)
+            bulk_destroy_at(b, world_grid_idx)
+        end
+    end
+end
 
 
 "An element within a bulk entity, represented with its world-grid index"

@@ -35,6 +35,11 @@ function chunk_grid_idx(chunk_idx::v3i, world_grid_pos::Vec3)::typeof(world_grid
     return world_grid_pos - first_grid_pos + ONE
 end
 
+"Gets all world-grid cells in the given chunk"
+grid_idcs_in_chunk(chunk_idx::v3i) = let a = chunk_first_grid_idx(chunk_idx)
+    ((a + b) for b in one(v3i):CHUNK_SIZE)
+end
+
 
 @component GridChunk {require: GridGenerator} begin
     idx::v3i # Multiply by the chunk size to get the first grid index in this chunk
@@ -58,16 +63,20 @@ end
     end
     function DESTRUCT(is_world_grid_dying::Bool)
         # Kill all grid entities within this chunk.
+        bulk_components = Set{BulkElements}()
         for idx in 1:vsize(this.elements)
             element = this.elements[idx]
             if exists(element)
                 if element isa BulkElements
-                    world_idx = (idx - Int32(1)) + (this.idx * CHUNK_SIZE)
-                    bulk_destroy_at(element, world_idx)
+                    push!(bulk_components, element)
                 else
                     remove_entity(world, element)
                 end
             end
+        end
+        # Tell each relevant bulk-component about this chunk being destroyed.
+        for bulk in bulk_components
+            bulk_destroy_chunk(bulk, this.idx, is_world_grid_dying)
         end
         # Un-register this chunk with the manager component.
         if !is_world_grid_dying

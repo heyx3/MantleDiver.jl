@@ -415,28 +415,28 @@ end
 
 function rock_render_create(renderer::Renderable_Rock, grid_pos::v3i, rock::Rock)
     chunk_idx = rock_render_chunk_idx(grid_pos)
-    ubo_element = RockDataBufferElement(
-        v4i(grid_pos..., 0),
-        pack_rock_densities_for_gpu(rock.minerals)
-    )
+    function set_ubo_element(r::RockDataBufferElement)
+        r.world_grid_pos = v4i(grid_pos..., 0)
+        r.packed_densities = pack_rock_densities_for_gpu(rock.minerals)
+    end
 
     local chunk::RockDataChunk,
           chunk_ubo::Buffer
     if !haskey(renderer.rock_data_buffers, chunk_idx)
         # Create a new chunk holding this single rock.
-        chunk = RockDataChunk(1, ntuple(Val(ROCK_BUFFER_CHUNK_LENGTH)) do i
-            if i == 1
-                return ubo_element
-            else
-                return RockDataBufferElement(zero(v4i), zero(v2u))
-            end
-        end)
+        chunk = RockDataChunk()
+        chunk.count = 1
+        set_ubo_element(chunk.elements[1])
+        for i in 2:length(chunk.elements)
+            chunk.elements[i].world_grid_pos = zero(v4i)
+            chunk.elements[i].packed_densities = zero(v2u)
+        end
         chunk_ubo = Buffer(true, chunk)
     else
-        # Add a new rock to the chunk.
+        # Add the new rock to the existing chunk.
         (chunk, chunk_ubo) = renderer.rock_data_buffers[chunk_idx]
         chunk.count += 1
-        chunk.elements[chunk.count] = ubo_element
+        set_ubo_element(chunk.elements[chunk.count])
 
         # Mark the chunk for GPU upload next tick.
         push!(renderer.chunks_that_need_reupload, chunk_idx)
@@ -454,10 +454,13 @@ function rock_render_destroy(renderer::Renderable_Rock, grid_pos::v3i, rock::Roc
     (chunk, chunk_ubo) = renderer.rock_data_buffers[chunk_idx]
     rock_idx = renderer.rock_index_in_chunk[grid_pos]
 
-    # Delete the rock from the chunk.
+    # Delete the rock from the chunk, moving the rest of the rocks down by one index.
     chunk.elements[rock_idx : chunk.count-1] = chunk.elements[rock_idx+1 : chunk.count]
     chunk.count -= 1
     delete!(renderer.rock_index_in_chunk, grid_pos)
+    for element in chunk.elements[rock_idx : chunk.count]
+        renderer.rock_index_in_chunk[element.world_grid_pos.xyz] -= 1
+    end
 
     # Update or destroy the chunk itself.
     if chunk.count > 0
@@ -468,4 +471,24 @@ function rock_render_destroy(renderer::Renderable_Rock, grid_pos::v3i, rock::Roc
         delete!(renderer.rock_data_buffers, chunk_idx)
         delete!(renderer.chunks_that_need_reupload, chunk_idx)
     end
+end
+function bulk_destroy_chunk(b::RockBulkElements, chunk_idx::v3i, is_world_grid_dying::Bool)
+    # If the entire world grid is dying, wait for our component to be destroyed and clean everything up.
+    if is_world_grid_dying
+        return nothing
+    end
+
+    # Delete the rendering resources associated with this entire chunk.
+    renderer = get_component(b.entity, Renderable_Rock)
+    delete!(renderer.chunks_that_need_reupload, chunk_idx)
+    close(renderer.rock_data_buffers[chunk_idx])
+    delete!(renderer.rock_data_buffers, chunk_idx)
+
+    # Re-implmement the default behavior of clearing out the bulk lookup data for this chunk.
+    for grid_idx in grid_idcs_in_chunk(chunk_idx)
+        delete!(b.lookup, grid_idx)
+        delete!(renderer.rock_index_in_chunk, chunk_idx)
+    end
+
+    return nothing
 end
