@@ -79,7 +79,6 @@ function Assets()
     chars_atlas_lookup = Matrix{vRGBAf}(undef, max_density, n_shapes)
     for shape in 1:n_shapes
         shape_enum = CharShapeType.from(shape - 1)
-        println("Shape ", shape, ": ", shape_enum)
         by_density = ASCII_CHARS_BY_SHAPE_THEN_DENSITY[shape_enum]
         for density in 1:max_density
             char = if density == 1

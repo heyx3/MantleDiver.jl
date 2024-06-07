@@ -201,7 +201,7 @@ function gui_debug_maneuvers(mission::Mission, gui::DebugGui)
                                                 current_move_dir)
         drilled_pos = mission.player_pos.get_precise_position() + world_dir
         drilled_grid_pos = grid_idx(drilled_pos)
-        return exists(component_at!(mission.grid, drilled_grid_pos, Rock)) #TODO: Drillable component for grid entities
+        return exists(component_at!(mission.grid, drilled_grid_pos, Rock))
     end
     CImGui.Text("DRILL"); CImGui.SameLine()
     CImGui.Dummy(10, 0); CImGui.SameLine()

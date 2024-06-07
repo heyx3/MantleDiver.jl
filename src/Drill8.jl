@@ -43,13 +43,21 @@ include("Components/PlayerCab/rendering.jl")
 include("Game/entity_prototypes.jl")
 include("Game/level_generators.jl")
 include("Game/mission.jl")
+include("Game/input.jl")
 
 include("Debug/debug_assets.jl")
 include("Debug/debug_gui_widgets.jl")
 
 
+get_imgui_current_drawable_region() = Box2Df(
+    #TODO Handle scroll offset, then move this calculation into a B+ function
+    min = convert(v2f, CImGui.GetCursorPos()) -
+            convert(v2f, CImGui.GetWindowPos()),
+    size = convert(v2f, CImGui.GetContentRegionAvail())
+)
+
 function julia_main()::Cint
-    @game_loop begin
+    Bplus.@game_loop begin
         INIT(
             v2i(1280, 770), "Drill8",
             debug_mode = @d8_debug
@@ -63,6 +71,7 @@ function julia_main()::Cint
                 #, seed = 0x12345
             )
             @d8_debug(@check_gl_logs "After mission creation")
+            register_mission_inputs()
 
             assets = Assets()
             @d8_debug(@check_gl_logs "After asset creation")
@@ -84,6 +93,8 @@ function julia_main()::Cint
                     GL.DepthStencilFormats.depth_16u
                 )
                 @check_gl_logs "After DebugGameRender creation"
+
+                is_in_main_view::Bool = false
             end
 
             GLFW.ShowWindow(LOOP.context.window)
@@ -117,9 +128,14 @@ function julia_main()::Cint
             @d8_debug(@check_gl_logs "After mission tick")
             (!continue_mission) && break
 
+            # Handle mission inputs.
+            if @d8_debug is_in_main_view true
+                update_mission_inputs(mission)
+            end
+
             # Render the player's POV.
             player_viewport_settings = ViewportDrawSettings(
-                
+
             )
             render_mission(mission, assets, player_viewport_settings)
             @d8_debug(@check_gl_logs "After mission render")
@@ -145,6 +161,8 @@ function julia_main()::Cint
                         @check_gl_logs "Before any debug GUI tabs"
 
                         gui_tab_item("Game View") do
+                            is_in_main_view = true
+
                             CImGui.Image(GUI.gui_tex_handle(debug_game_render.attachment_colors[1].tex),
                                          convert(v2f, debug_game_render.size),
                                          # Flip UV y:
@@ -153,12 +171,9 @@ function julia_main()::Cint
                         @check_gl_logs "After 'Game View' tab"
 
                         gui_tab_item("Game View 2D") do
-                            game_view_tab_region = Box2Df(
-                                #TODO Handle scroll offset, then move this calculation into a B+ function
-                                min = convert(v2f, CImGui.GetCursorPos()) -
-                                        convert(v2f, CImGui.GetWindowPos()),
-                                size = convert(v2f, CImGui.GetContentRegionAvail())
-                            )
+                            is_in_main_view = false
+
+                            game_view_tab_region = get_imgui_current_drawable_region()
                             game_view_area = Box2Df(
                                 min=min_inclusive(game_view_tab_region),
                                 size=size(game_view_tab_region) * v2f(1, 0.8)
@@ -172,6 +187,8 @@ function julia_main()::Cint
                         @check_gl_logs "After 'Game View 2D' tab"
 
                         gui_tab_item("Assets") do
+                            is_in_main_view = false
+
                             gui_visualize_textures(debug_gui, debug_assets, mission, assets)
                         end
                         @check_gl_logs "After 'Assets' tab"
