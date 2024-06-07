@@ -163,10 +163,64 @@ function julia_main()::Cint
                         gui_tab_item("Game View") do
                             is_in_main_view = true
 
+                            draw_list = CImGui.GetForegroundDrawList()
+                            game_view_tab_region = get_imgui_current_drawable_region()
+
+                            # Draw an XYZ axis indicator as Dear ImGUI lines.
+                            BASIS_SCREEN_LENGTH = @f32(50)
+                            player_rot_basis::Bplus.Math.VBasis = q_basis(mission.player_rot.rot)
+                            # Pitch the view down a little bit since the player's view is always orthogonal
+                            #    and this removes any depth clues in the axis render.
+                            player_rot_basis = Bplus.vbasis(vnorm(player_rot_basis.forward + v3f(0, 0, -0.2)),
+                                                            player_rot_basis.up)
+                            basis_camera = Bplus.BplusTools.Cam3D{Float32}(
+                                forward=player_rot_basis.forward,
+                                up=player_rot_basis.up,
+                                projection = OrthographicProjection{Float32}(
+                                    min=v3f(-1, -1, -1),
+                                    max=v3f(1, 1, 1)
+                                )
+                            )
+                            basis_vec_to_screen::fmat4x4 = m_combine(
+                                cam_view_mat(basis_camera),
+                                cam_projection_mat(basis_camera)
+                            )
+                            basis_screen_origin = v2f(
+                                min_inclusive(game_view_tab_region).x +
+                                   debug_game_render.size.x +
+                                   BASIS_SCREEN_LENGTH + 10,
+                                center(game_view_tab_region).y
+                            )
+                            HALF_LINE_THICKNESS = 2.5f0
+                            for axis in 1:3
+                                world_axis = zero(v3f)
+                                @set! world_axis[axis] = 1
+
+                                gui_axis_3d::v3f = vnorm(Bplus.m_apply_vector_affine(basis_vec_to_screen, world_axis))
+                                gui_axis::v2f = gui_axis_3d.xy
+                                @set! gui_axis.y = -gui_axis.y # Flip for Dear ImGUI coordinates
+
+                                color = (
+                                    # Note that colors are ABGR
+                                    0xff0000ff,
+                                    0xff00ff00,
+                                    0xffff0000
+                                )[axis]
+
+                                CImGui.AddLine(
+                                    draw_list,
+                                    basis_screen_origin,
+                                    basis_screen_origin + (BASIS_SCREEN_LENGTH * gui_axis),
+                                    color,
+                                    lerp(3.0, 4.5, -gui_axis_3d.z) # The Z ranges from -1 to 1
+                                )
+                            end
+
                             CImGui.Image(GUI.gui_tex_handle(debug_game_render.attachment_colors[1].tex),
                                          convert(v2f, debug_game_render.size),
                                          # Flip UV y:
                                          (0,1), (1,0))
+
                         end
                         @check_gl_logs "After 'Game View' tab"
 
