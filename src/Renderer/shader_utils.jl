@@ -21,7 +21,7 @@ const SHADER_CODE_UTILS = """
 
     //Utils copied from BpWorld:
 
-    #define OSCILLATE(a, b, input) (mix(a, b, 0.5 + (0.5 * sin(PI_2 * (input)))))
+    #define OSCILLATE(a, b, x) (mix(a, b, 0.5 + (0.5 * sin(PI_2 * (x)))))
 
     #define SATURATE(x) clamp(x, 0.0, 1.0)
     #define SHARPEN(t) smoothstep(0.0, 1.0, t)

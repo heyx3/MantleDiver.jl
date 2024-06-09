@@ -11,7 +11,8 @@ Bplus.@bp_enum(FramebufferRenderMode,
     foreground_color,
     foreground_density,
     background_color,
-    background_density
+    background_density,
+    is_foreground_transparent
 )
 const UNIFORM_NAME_RENDER_MODE = "u_outputMode";
 
@@ -258,7 +259,7 @@ function Assets()
 
         #START_FRAGMENT
             in vec2 vOut_uv;
-            out vec4 vOut_color;
+            out vec4 fOut_color;
 
             $UBO_CODE_FRAMEBUFFER_READ_DATA
             $UBO_CODE_CHAR_RENDERING
@@ -268,8 +269,8 @@ function Assets()
             $SHADER_CODE_UTILS
 
             void main() {
-                vOut_color = vec4(1, 0, 1, 1);
-                #define PICK_OUTPUT(colorRGB) { vOut_color.rgb = vec3(colorRGB); return; }
+                fOut_color = vec4(1, 0, 1, 1);
+                #define PICK_OUTPUT(colorRGB) { fOut_color.rgb = vec3(colorRGB); return; }
 
                 //Read data from the framebuffer.
                 MaterialSurface surface;
@@ -287,7 +288,9 @@ function Assets()
                 else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.background_color)))
                     PICK_OUTPUT(float(surface.backgroundColor / float(u_char_rendering.n_colors - 1)))
                 else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.background_density)))
-                    PICK_OUTPUT(surface.foregroundDensity)
+                    PICK_OUTPUT(surface.backgroundDensity)
+                else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.is_foreground_transparent)))
+                    PICK_OUTPUT(surface.isTransparent ? 1.0 : 0.0)
 
                 //Read the font atlas for this pixel's char.
                 float charA = readChar(surface.foregroundShape, surface.foregroundDensity, charUV);

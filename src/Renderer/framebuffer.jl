@@ -75,7 +75,7 @@ uint packDensity(float value)
 float unpackDensity(uint sampleR)
 {
     return float(sampleR & $(Int(DENSITY_BIT_MASK))) /
-                float($(Int(DENSITY_PACKED_MAX)));
+             float($(Int(DENSITY_PACKED_MAX)));
 }
 
 uvec2 packForeground(MaterialSurface surf)
