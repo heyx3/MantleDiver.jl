@@ -357,12 +357,12 @@ end
                         VERT(swizzleMaxUV   , (1, 1), normal); \\
                         EndPrimitive(); \\
                     }
-                    FACE((-1, 0,  0), rrr, rgr, rrg, rgg)
-                    FACE(( 1, 0,  0), grr, grg, ggr, ggg)
-                    FACE((0, -1,  0), rrr, rrg, grr, grg)
-                    FACE((0,  1,  0), rgr, ggr, rgg, ggg)
-                    FACE((0,  0, -1), rrr, grr, rgr, ggr)
-                    FACE((0,  0,  1), rrg, rgg, grg, ggg)
+                    FACE((-1, 0,  0), rrr, rrg, rgr, rgg)
+                    FACE(( 1, 0,  0), grr, ggr, grg, ggg)
+                    FACE((0, -1,  0), rrr, grr, rrg, grg)
+                    FACE((0,  1,  0), rgr, rgg, ggr, ggg)
+                    FACE((0,  0, -1), rrr, rgr, grr, ggr)
+                    FACE((0,  0,  1), rrg, grg, rgg, ggg)
                 }
 
             #START_FRAGMENT

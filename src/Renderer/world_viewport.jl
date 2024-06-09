@@ -82,7 +82,7 @@ function render_to_framebuffer(callback_draw_world,
     GL.with_depth_writes(true) do
      GL.with_depth_test(GL.ValueTests.less_than) do
       GL.with_viewport(Math.Box2Di(min=v2i(1, 1),  size=viewport.resolution)) do
-       GL.with_culling(GL.FaceCullModes.backwards) do
+       GL.with_culling(GL.FaceCullModes.on) do
         GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGBA)) do
             #begin
             GL.set_uniform_block(viewport.ubo_write, UBO_INDEX_FRAMEBUFFER_WRITE_DATA)
@@ -111,9 +111,12 @@ function render_to_framebuffer(callback_draw_world,
                             1)
             GL.target_clear(viewport.background_target, Float32(1))
             GL.target_activate(viewport.background_target)
+            GL.view_activate(viewport.foreground_depth)
             callback_draw_world(RenderPass.background)
+            GL.view_deactivate(viewport.foreground_depth)
+
+            GL.target_activate(nothing)
         end end end end end
-    GL.target_activate(nothing)
 end
 
 "
@@ -124,6 +127,7 @@ function post_process_framebuffer(viewport::WorldViewport,
                                   assets::Assets,
                                   settings::ViewportDrawSettings)
     GL.set_uniform_block(viewport.ubo_read, UBO_INDEX_FRAMEBUFFER_READ_DATA)
+    GL.set_uniform(assets.shader_render_chars, UNIFORM_NAME_RENDER_MODE, Int(settings.output_mode))
 
     GL.view_activate(viewport.foreground)
     GL.view_activate(viewport.background)
@@ -133,12 +137,8 @@ function post_process_framebuffer(viewport::WorldViewport,
      GL.with_depth_test(GL.ValueTests.pass) do
       GL.with_culling(GL.FaceCullModes.off) do
        GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGBA)) do
-        #begin
-        GL.set_uniform(assets.shader_render_chars,
-                       UNIFORM_NAME_RENDER_MODE,
-                       Int(settings.output_mode))
-        GL.render_mesh(service_BasicGraphics().screen_triangle,
-                       assets.shader_render_chars)
+            GL.render_mesh(service_BasicGraphics().screen_triangle,
+                           assets.shader_render_chars)
     end end end end
 
     GL.view_deactivate(viewport.foreground)
