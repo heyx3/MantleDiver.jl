@@ -174,101 +174,6 @@ const UBO_CODE_ROCK_DATA = """
     } u_rock_chunk;
 """
 
-const SHADER_CODE_ROCK_COLORING = """
-    $SHADER_CODE_UTILS
-
-    MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, RockDataBufferElement data) {
-        //Get the density of each mineral.
-        float mineralDensities[$(N_MINERALS + 1)];
-        unpackRockDensities(data.packed_densities, mineralDensities);
-
-        //Define the surface properties of each mineral, and plain rock.
-        MaterialSurface mineralSurfaces[$(N_MINERALS + 1)];
-        #define MINERAL(idx, foreCol, foreShape, foreDen, backCol, backDen) { \\
-            mineralSurfaces[idx].foregroundColor = foreCol; \\
-            mineralSurfaces[idx].foregroundDensity = foreDen; \\
-            mineralSurfaces[idx].foregroundShape = foreShape; \\
-            mineralSurfaces[idx].backgroundColor = backCol; \\
-            mineralSurfaces[idx].backgroundDensity = backDen; \\
-        }
-        MINERAL($(Int(Mineral.storage)),
-                6, $(Int(CharShapeType.block)), 0.3,
-                6, 0.1);
-        MINERAL($(Int(Mineral.hull)),
-                2, $(Int(CharShapeType.block)), 0.7,
-                6, 0.1);
-        MINERAL($(Int(Mineral.drill)),
-                6, $(Int(CharShapeType.unusual)), 0.2,
-                1, 0.3);
-        MINERAL($(Int(Mineral.specials)),
-                7, $(Int(CharShapeType.unusual)), 0.8,
-                1, 0.0);
-        MINERAL($(Int(Mineral.sensors)),
-                4, $(Int(CharShapeType.tall)), 0.75,
-                1, 0.0);
-        MINERAL($(Int(Mineral.maneuvers)),
-                4, $(Int(CharShapeType.wide)), 0.275,
-                1, 0.0);
-        MINERAL($N_MINERALS,
-                1, $(Int(CharShapeType.round)), 0.0,
-                1, 0.0);
-
-        //DEBUG: pick a simpler coloring scheme.
-        vec3 absNormal = abs(normal);
-        vec2 posAlongSurface;
-        if (absNormal.z > max(absNormal.x, absNormal.y))
-            posAlongSurface = worldPos.xy;
-        else if (absNormal.y > max(absNormal.x, absNormal.z))
-            posAlongSurface = worldPos.xz;
-        else
-            posAlongSurface = worldPos.yz;
-        float n = perlinNoise(posAlongSurface * 3.0, 0.293442);
-        MaterialSurface mat;
-        if (n < 0.3)
-        {
-            mat.foregroundColor = 1;
-            mat.foregroundDensity = 0.5;
-            mat.foregroundShape = $(Int(CharShapeType.unusual));
-            mat.backgroundColor = 0;
-            mat.backgroundDensity = 1.0;
-        }
-        else if (n < 0.6)
-        {
-            mat.foregroundColor = 4;
-            mat.foregroundDensity = 0.75;
-            mat.foregroundShape = $(Int(CharShapeType.wide));
-            mat.backgroundColor = 2;
-            mat.backgroundDensity = 0.3;
-        }
-        else if (n <= 1.0)
-        {
-            mat.foregroundColor = 6;
-            mat.foregroundDensity = 0.25;
-            mat.foregroundShape = $(Int(CharShapeType.tall));
-            mat.backgroundColor = 5;
-            mat.backgroundDensity = 0.5;
-        }
-        else
-        {
-            mat.foregroundColor = 7;
-            mat.foregroundDensity = 0.5;
-            mat.foregroundShape = $(Int(CharShapeType.block));
-            mat.backgroundColor = 1;
-            mat.backgroundDensity = 0.4;
-        }
-        return mat;
-
-
-        //Pick the surface data of the densest mineral in this rock.
-        //TODO: Pick a mineral in a more interesting way.
-        int densestI = 0;
-        for (int i = 1; i < $N_MINERALS + 1; ++i)
-            if (mineralDensities[i] > mineralDensities[densestI])
-                densestI = i;
-        return mineralSurfaces[densestI];
-    }
-"""
-
 
 "Gets the rock render chunk covering a given grid postion"
 function rock_render_chunk_idx(world_grid_pos::Vec3)::v3i
@@ -317,6 +222,10 @@ end
         push!(this.bulk.on_element_added, (args...) -> rock_render_create(this, args...))
         push!(this.bulk.on_element_removed, (args...) -> rock_render_destroy(this, args...))
 
+        # Generate the shader string, using shading logic from a text file.
+        shader_file_str = open(io -> read(io, String),
+                               joinpath(ASSETS_FOLDER, "rockColoring.glsl"), "r")
+        shader_file_str = replace(shader_file_str, "\r"=>"")
         this.shader = GL.bp_glsl_str("""
             $UBO_CODE_ROCK_DATA
             #START_VERTEX
@@ -371,11 +280,31 @@ end
                 in flat vec3 fIn_normal;
 
                 $UBO_CODE_FRAMEBUFFER_WRITE_DATA
-                $SHADER_CODE_ROCK_COLORING
+
+                $SHADER_CODE_UTILS
+
+                #define N_MINERALS $N_MINERALS
+                #define N_MINERALS_AND_ROCK $(N_MINERALS + 1)
+                $(map(Mineral.instances()) do mineral
+                    return """#define MINERAL_$mineral $(Int(mineral))
+                """ end...)
+                $(map(CharShapeType.instances()) do shape
+                    return """#define SHAPE_$shape $(Int(shape))
+                """ end...)
+                #line 0
+
+                //Import the actual shading code from a text file.
+                $shader_file_str
 
                 void main() {
+                    //Get the density of each mineral.
                     RockDataBufferElement rock = u_rock_chunk.elements[gl_PrimitiveID];
-                    MaterialSurface surf = getRockMaterial(fIn_worldPos, fIn_uv, fIn_normal, rock);
+                    float mineralDensities[N_MINERALS_AND_ROCK];
+                    unpackRockDensities(rock.packed_densities, mineralDensities);
+
+                    //Call into the surface shader specified in the text file.
+                    MaterialSurface surf = getRockMaterial(fIn_worldPos, fIn_uv, fIn_normal, mineralDensities);
+
                     writeFramebuffer(surf);
                 }
         """)
