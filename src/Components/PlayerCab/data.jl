@@ -73,7 +73,7 @@ const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
     [
         # Move forward on treads.
         CabMovementData(
-            3.0,
+            2.0,
             [
                 CMKf(v3f(0, 0, 0), 0.02,
                      SV(1, 0)),
@@ -94,7 +94,7 @@ const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
 
         # Climb up over a corner.
         CabMovementData(
-            5.0,
+            2.0,
             [
                 CMKf(v3f(0, 0, 0), 0.02,
                      SV(1, 0)),
@@ -106,7 +106,7 @@ const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
                 CMKf(v3f(0.35, 0, 0.4), 0.5,
                      SV(0, 1)),
 
-                CMKf(v3f(0.75, 0, 0.75), 0.85,
+                CMKf(v3f(0.65, 0, 0.75), 0.85,
                      SV(0, 1)),
 
                 CMKf(v3f(1, 0, 1), 1.0,
@@ -120,7 +120,7 @@ const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
 
         # Climb down across a corner.
         CabMovementData(
-            6.0,
+            2.0,
             [
                 CMKf(v3f(0, 0, 0), 0.02,
                      SV(1, 0)),
@@ -235,6 +235,6 @@ end
 #  Drilling simulation
 
 
-const DRILL_DURATION_SECONDS = @f32(3)
+const DRILL_DURATION_SECONDS = @f32(2)
 
 const DRILL_SHAKE_STRENGTH = @f32(1)
