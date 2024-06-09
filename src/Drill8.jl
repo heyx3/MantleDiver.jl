@@ -33,9 +33,7 @@ include("Components/Core/grid_manager.jl")
 include("Components/Core/grid_element.jl")
 include("Components/Core/debug_gui_visuals.jl")
 include("Components/Core/renderable.jl")
-
 include("Components/GridObjects/rock.jl")
-
 include("Components/PlayerCab/data.jl")
 include("Components/PlayerCab/maneuvers.jl")
 include("Components/PlayerCab/rendering.jl")
@@ -59,7 +57,8 @@ get_imgui_current_drawable_region() = Box2Df(
 function julia_main()::Cint
     Bplus.@game_loop begin
         INIT(
-            v2i(1280, 770), "Drill8",
+            @d8_debug(v2i(900, 950), v2i(900, 900)),
+            "Drill8",
             debug_mode = @d8_debug
         )
 
@@ -68,7 +67,6 @@ function julia_main()::Cint
                 PlayerLoadout(
                 ),
                 v2i(50, 50)
-                #, seed = 0x12345
             )
             @d8_debug(@check_gl_logs "After mission creation")
             register_mission_inputs()
@@ -76,7 +74,7 @@ function julia_main()::Cint
             assets = Assets()
             @d8_debug(@check_gl_logs "After asset creation")
 
-            # In debug mode provide various GUI widgets,
+            # In debug builds provide various GUI widgets,
             #    one of which will contain the rendered scene.
             @d8_debug begin
                 debug_assets = DebugAssets()
@@ -84,7 +82,7 @@ function julia_main()::Cint
                 debug_gui = DebugGui()
                 @check_gl_logs "After DebugGui creation"
                 debug_game_render = GL.Target(
-                    convert(v2u, mission.player_viewport.resolution * 14),
+                    convert(v2u, mission.player_viewport.resolution * 16),
                     GL.SimpleFormat(
                         GL.FormatTypes.normalized_uint,
                         GL.SimpleFormatComponents.RGB,
@@ -107,7 +105,9 @@ function julia_main()::Cint
             end
 
             # Tick the mission, and quit if it ends.
-            continue_mission::Bool = if @d8_debug
+            continue_mission::Bool = if !@d8_debug
+                tick!(mission, LOOP.delta_seconds)
+            else
                 if debug_gui.gameplay_speed == DebugGuiSpeed.play
                     tick!(mission, LOOP.delta_seconds)
                 elseif debug_gui.gameplay_speed == DebugGuiSpeed.pause
@@ -122,8 +122,6 @@ function julia_main()::Cint
                 else
                     error("Unhandled case: ", debug_gui.gameplay_speed)
                 end
-            else
-                tick!(mission, LOOP.delta_seconds)
             end
             @d8_debug(@check_gl_logs "After mission tick")
             (!continue_mission) && break
@@ -135,12 +133,12 @@ function julia_main()::Cint
 
             # Render the player's POV.
             player_viewport_settings = ViewportDrawSettings(
-
+                output_mode = @d8_debug(debug_gui.render_mode, FramebufferRenderMode.regular)
             )
             render_mission(mission, assets, player_viewport_settings)
             @d8_debug(@check_gl_logs "After mission render")
 
-            # Draw the game to the screen (or in debug, to a Target).
+            # Draw the game to the screen (or to a Target in debug builds).
             @d8_debug target_activate(debug_game_render)
             GL.clear_screen(vRGBAf(1, 0, 1, 0))
             post_process_framebuffer(mission.player_viewport, assets, player_viewport_settings)
@@ -162,65 +160,7 @@ function julia_main()::Cint
 
                         gui_tab_item("Game View") do
                             is_in_main_view = true
-
-                            draw_list = CImGui.GetForegroundDrawList()
-                            game_view_tab_region = get_imgui_current_drawable_region()
-
-                            # Draw an XYZ axis indicator as Dear ImGUI lines.
-                            BASIS_SCREEN_LENGTH = @f32(50)
-                            player_rot_basis::Bplus.Math.VBasis = q_basis(mission.player_rot.rot)
-                            # Pitch the view down a little bit since the player's view is always orthogonal
-                            #    and this removes any depth clues in the axis render.
-                            player_rot_basis = Bplus.vbasis(vnorm(player_rot_basis.forward + v3f(0, 0, -0.2)),
-                                                            player_rot_basis.up)
-                            basis_camera = Bplus.BplusTools.Cam3D{Float32}(
-                                forward=player_rot_basis.forward,
-                                up=player_rot_basis.up,
-                                projection = OrthographicProjection{Float32}(
-                                    min=v3f(-1, -1, -1),
-                                    max=v3f(1, 1, 1)
-                                )
-                            )
-                            basis_vec_to_screen::fmat4x4 = m_combine(
-                                cam_view_mat(basis_camera),
-                                cam_projection_mat(basis_camera)
-                            )
-                            basis_screen_origin = v2f(
-                                min_inclusive(game_view_tab_region).x +
-                                   debug_game_render.size.x +
-                                   BASIS_SCREEN_LENGTH + 10,
-                                center(game_view_tab_region).y
-                            )
-                            HALF_LINE_THICKNESS = 2.5f0
-                            for axis in 1:3
-                                world_axis = zero(v3f)
-                                @set! world_axis[axis] = 1
-
-                                gui_axis_3d::v3f = vnorm(Bplus.m_apply_vector_affine(basis_vec_to_screen, world_axis))
-                                gui_axis::v2f = gui_axis_3d.xy
-                                @set! gui_axis.y = -gui_axis.y # Flip for Dear ImGUI coordinates
-
-                                color = (
-                                    # Note that colors are ABGR
-                                    0xff0000ff,
-                                    0xff00ff00,
-                                    0xffff0000
-                                )[axis]
-
-                                CImGui.AddLine(
-                                    draw_list,
-                                    basis_screen_origin,
-                                    basis_screen_origin + (BASIS_SCREEN_LENGTH * gui_axis),
-                                    color,
-                                    lerp(3.0, 4.5, -gui_axis_3d.z) # The Z ranges from -1 to 1
-                                )
-                            end
-
-                            CImGui.Image(GUI.gui_tex_handle(debug_game_render.attachment_colors[1].tex),
-                                         convert(v2f, debug_game_render.size),
-                                         # Flip UV y:
-                                         (0,1), (1,0))
-
+                            gui_debug_main_view(debug_gui, mission, debug_game_render)
                         end
                         @check_gl_logs "After 'Game View' tab"
 
