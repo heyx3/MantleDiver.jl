@@ -28,6 +28,8 @@ const TURN_INCREMENT_DEG = @f32(30)
 
 function update_mission_inputs(mission::Mission)
     gui_keyboard::Bool = unsafe_load(CImGui.GetIO().WantCaptureKeyboard)
+    gui_mouse::Bool = unsafe_load(CImGui.GetIO().WantCaptureMouse)
+
     if gui_keyboard
         # Skip input checking; Dear ImGUI is capturing all input.
     elseif !player_is_busy(mission.player)
@@ -36,7 +38,7 @@ function update_mission_inputs(mission::Mission)
 
         function try_move(m, flip=1)
             move_dir = CabMovementDir(player_grid_direction, flip)
-            if is_legal(m, move_dir, player_voxel, pos -> is_passable(mission.grid, pos))
+            if can_do_move_from(player_voxel, move_dir, m, mission.grid)
                 player_start_moving(mission.player, m, move_dir)
             end
         end
@@ -47,10 +49,7 @@ function update_mission_inputs(mission::Mission)
         end
         function can_drill(canonical_dir::Vec3, flip=1)
             drill_dir = CabMovementDir(player_grid_direction, flip)
-            world_dir::v3f = rotate_cab_movement(convert(v3f, canonical_dir), drill_dir)
-            drilled_pos = player_voxel + world_dir
-            drilled_grid_pos = grid_idx(drilled_pos)
-            return exists(component_at!(mission.grid, drilled_grid_pos, Rock))  #TODO: Drillable component for grid entities
+            return can_drill_from(player_voxel, drill_dir, canonical_dir, mission.grid)
         end
 
         if Bplus.Input.get_button("P_FORWARD")

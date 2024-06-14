@@ -54,15 +54,31 @@ get_imgui_current_drawable_region() = Box2Df(
     size = convert(v2f, CImGui.GetContentRegionAvail())
 )
 
-function julia_main()::Cint
+const AUTO_MODE_FRAME_COUNT = 4000
+
+"
+Runs the game.
+In 'auto mode', plays the game with no fps cap and automatic maneuvers,
+    to precompile as much as possible.
+"
+function inner_main(auto_mode_frame_count::Optional{Int})::Cint
+    auto_mode::Bool = exists(auto_mode_frame_count)
     Bplus.@game_loop begin
         INIT(
             @d8_debug(v2i(900, 950), v2i(900, 900)),
             "Drill8",
-            debug_mode = @d8_debug
+            debug_mode = @d8_debug,
+            vsync = (auto_mode ? VsyncModes.off : VsyncModes.on)
         )
 
         SETUP = begin
+            # Check the path we're running from.
+            if !isdir(ASSETS_FOLDER)
+                error("Running from a location with no 'assets' folder! ",
+                        "This is not the right place to run from. ",
+                        pwd())
+            end
+
             mission = Mission(
                 PlayerLoadout(
                 ),
@@ -95,6 +111,11 @@ function julia_main()::Cint
                 is_in_main_view::Bool = false
             end
 
+            if auto_mode
+                LOOP.max_fps = nothing
+                println(stderr, "Running an auto-game of ", auto_mode_frame_count, " frames...")
+            end
+
             GLFW.ShowWindow(LOOP.context.window)
         end
 
@@ -105,17 +126,18 @@ function julia_main()::Cint
             end
 
             # Tick the mission, and quit if it ends.
+            delta_seconds::Float32 = auto_mode ? @f32(1/30) : LOOP.delta_seconds
             continue_mission::Bool = if !@d8_debug
-                tick!(mission, LOOP.delta_seconds)
+                tick!(mission, delta_seconds)
             else
                 if debug_gui.gameplay_speed == DebugGuiSpeed.play
-                    tick!(mission, LOOP.delta_seconds)
+                    tick!(mission, delta_seconds)
                 elseif debug_gui.gameplay_speed == DebugGuiSpeed.pause
                     true
                 elseif debug_gui.gameplay_speed == DebugGuiSpeed.fast_forward
                     b = true
                     for i in 1:debug_gui.fast_forward_speed
-                        b |= tick!(mission, LOOP.delta_seconds)
+                        b |= tick!(mission, delta_seconds)
                         (!b) && break
                     end
                     b
@@ -189,18 +211,53 @@ function julia_main()::Cint
                     end
                 end
             end
+
+            # In 'auto mode', play automatically.
+            if auto_mode
+                # Print our progress.
+                if LOOP.frame_idx > 4000
+                    println(stderr, "\tFinishing game...")
+                    break
+                elseif ((LOOP.frame_idx-1) % 1000) == 0
+                    println(stderr, "\tFrame ", LOOP.frame_idx)
+                end
+
+                # If not maneuvering, maneuver.
+                if !player_is_busy(mission.player)
+                    if false
+                    else
+                        # If all else fails, turn in one direction.
+                        next_rot = get_orientation(mission.player) >>
+                                     Bplus.fquat(WORLD_UP, deg2rad(30))
+                        player_start_turning(mission.player, next_rot)
+                    end
+                end
+            end
         end
 
         TEARDOWN = begin
+            if auto_mode
+                println(stderr, "\tCleaning up")
+            end
             @d8_debug begin
                 close(debug_gui)
                 close(debug_assets)
             end
             close(mission)
             close(assets)
+
+            if auto_mode
+                println(stderr, "Done!")
+            end
         end
     end
     return 0
 end
+
+julia_main()::Cint = inner_main(nothing)
+
+# Precompile the game as much as possible when building this module,
+#    by running a session that plays itself automatically.
+inner_main(4000)
 
 end # module

@@ -25,20 +25,28 @@ MaterialSurface defineMineralSurface(uint fgColor, uint fgShape, float fgDensity
 void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
                            vec3 worldPos, vec2 uv, vec3 normal, vec2 worldPosAlongSurface)
 {
+    //Pre-define some noise values for all minerals to use.
+    float noises[] = {
+        perlinNoise(worldPos * 2, 1.42341),
+        perlinNoise(worldPos * 4, 5.334498471),
+        perlinNoise(worldPos * 8, 0.7)
+    };
+    #define NOISED(i, a, b, exponent) (mix(float(a), float(b), pow(noises[i], float(exponent))))
+
     mOuts[MINERAL_storage] = defineMineralSurface(
-        6, SHAPE_block, 0.3,
+        6, SHAPE_block, NOISED(0,   0.23, 0.43,   1.0),
         6, 0.1
     );
     mOuts[MINERAL_hull] = defineMineralSurface(
-        2, SHAPE_block, 0.7,
+        2, SHAPE_block, NOISED(0,   0.1, 0.7,   0.3),
         6, 0.1
     );
     mOuts[MINERAL_drill] = defineMineralSurface(
-        6, SHAPE_unusual, 0.2,
+        6, SHAPE_unusual, NOISED(0,    0.2, 0.3,   4.0),
         1, 0.3
     );
     mOuts[MINERAL_specials] = defineMineralSurface(
-        7, SHAPE_unusual, 0.8,
+        7, SHAPE_unusual, NOISED(0,    0.8, 1,   6.0),
         1, 0.0
     );
     mOuts[MINERAL_sensors] = defineMineralSurface(
@@ -47,14 +55,12 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
     );
     mOuts[MINERAL_maneuvers] = defineMineralSurface(
         4, SHAPE_wide, 0.275,
-        1, 0.0
+        4, NOISED(1,    0.2, 0.7,     1.0)
     );
 
     //Plain rock:
     mOuts[N_MINERALS] = defineMineralSurface(
-        1, SHAPE_round,
-          mix(0.05, 0.4,
-              pow(perlinNoise(worldPosAlongSurface * 2, 1.42341), 2.4)),
+        1, SHAPE_round, NOISED(0,    0.05, 0.4,    3.0),
         3, 0.4
     );
 }

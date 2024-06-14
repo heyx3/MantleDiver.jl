@@ -89,6 +89,24 @@ function player_start_drilling(player::Entity,
     return add_component(player, CabDrill, direction, fx_seed)
 end
 
+function can_do_move_from(player_grid_idx::v3i,
+                          dir::CabMovementDir,
+                          move::CabMovementData,
+                          grid::GridManager
+                         )::Bool
+    return is_legal(move, dir, player_grid_idx, pos->is_passable(grid, pos))
+end
+function can_drill_from(player_grid_idx::v3i,
+                        player_dir::CabMovementDir,
+                        drill_canonical_dir::Vec3,
+                        grid::GridManager)
+    world_dir::v3f = rotate_cab_movement(convert(v3f, drill_canonical_dir), player_dir)
+    drilled_pos::v3f = player_grid_idx + world_dir
+    drilled_grid_idx::v3i = grid_idx(drilled_pos)
+    drilled_entity = component_at!(grid, drilled_grid_idx, Rock) #TODO: Drillable component for grid entities
+    return exists(drilled_entity)
+end
+
 
 ##   Rocks   ##
 

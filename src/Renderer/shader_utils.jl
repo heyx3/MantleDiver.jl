@@ -117,10 +117,21 @@ const SHADER_CODE_UTILS = """
                    smoothstep(0.0, 1.0, smoothstep(lerpArgs.z, lerpArgs.w, t)));
     }
 
-    vec2 randUnitVector(float uniformRandom)
+    vec2 randUnitVector2(float uniformRandom)
     {
         float theta = uniformRandom * PI_2;
         return vec2(cos(theta), sin(theta));
+    }
+    vec3 randUnitVector3(vec2 uniformRandom2)
+    {
+        //Source: https://math.stackexchange.com/a/44691
+        vec2 coords = mix(vec2(0, -1), vec2(PI_2, 1), uniformRandom2);
+        float determinant = sqrt(1.0 - (coords.y * coords.y));
+        return vec3(
+            cos(coords.x) * determinant,
+            sin(coords.x) * determinant,
+            coords.y
+        );
     }
 
     float linearizedDepth(float renderedDepth, float zNear, float zFar)
@@ -186,6 +197,7 @@ const SHADER_CODE_UTILS = """
         p3 += dot(p3, p3.zyx + 31.32);
         return fract((p3.x + p3.y) * p3.z);
     }
+    float hashTo1(vec4 p4) { return hashTo1(p4.xyz + p4.w); }
 
     //Hash 2D from 1D-3D data
     vec2 hashTo2(float p)
@@ -193,14 +205,12 @@ const SHADER_CODE_UTILS = """
         vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
         p3 += dot(p3, p3.yzx + 33.33);
         return fract((p3.xx+p3.yz)*p3.zy);
-
     }
     vec2 hashTo2(vec2 p)
     {
         vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
         p3 += dot(p3, p3.yzx+33.33);
         return fract((p3.xx+p3.yz)*p3.zy);
-
     }
     vec2 hashTo2(vec3 p3)
     {
@@ -208,6 +218,7 @@ const SHADER_CODE_UTILS = """
         p3 += dot(p3, p3.yzx+33.33);
         return fract((p3.xx+p3.yz)*p3.zy);
     }
+    vec2 hashTo2(vec4 p4) { return hashTo2(p4.xyz + p4.w); }
 
     //Hash 3D from 1D-3D data
     vec3 hashTo3(float p)
@@ -228,6 +239,7 @@ const SHADER_CODE_UTILS = """
         p3 += dot(p3, p3.yxz+33.33);
         return fract((p3.xxy + p3.yxx)*p3.zyx);
     }
+    vec3 hashTo3(vec4 p4) { return hashTo3(p4.xyz + p4.w); }
 
     //Hash 4D from 1D-4D data
     vec4 hashTo4(float p)
@@ -241,7 +253,6 @@ const SHADER_CODE_UTILS = """
         vec4 p4 = fract(vec4(p.xyxy) * vec4(.1031, .1030, .0973, .1099));
         p4 += dot(p4, p4.wzxy+33.33);
         return fract((p4.xxyz+p4.yzzw)*p4.zywx);
-
     }
     vec4 hashTo4(vec3 p)
     {
@@ -272,27 +283,47 @@ const SHADER_CODE_UTILS = """
         float t = x - xMin;
         //t = SMOOTHERSTEP(t); //Actually gives worse results due to
                             //  the dumb simplicity of the underlying noise
-        
+
         return mix(noiseMin, noiseMax, t);
     }
     float valueNoise(vec2 x, float seed)
     {
         vec2 xMin = floor(x),
-            xMax = ceil(x);
+             xMax = ceil(x);
         vec4 xMinMax = vec4(xMin, xMax);
 
         vec2 t = x - xMin;
         //t = SMOOTHERSTEP(t); //Actually gives worse results due to
                             //  the dumb simplicity of the underlying noise
-        
+
         #define VALUE_NOISE_2D(pos) hashTo1(vec3(pos, seed) * 450.0)
         return mix(mix(VALUE_NOISE_2D(xMinMax.xy),
-                    VALUE_NOISE_2D(xMinMax.zy),
-                    t.x),
-                mix(VALUE_NOISE_2D(xMinMax.xw),
-                    VALUE_NOISE_2D(xMinMax.zw),
-                    t.x),
-                t.y);
+                       VALUE_NOISE_2D(xMinMax.zy),
+                       t.x),
+                   mix(VALUE_NOISE_2D(xMinMax.xw),
+                       VALUE_NOISE_2D(xMinMax.zw),
+                       t.x),
+                   t.y);
+    }
+    float valueNoise(vec3 p, float seed)
+    {
+        vec3 pMin = floor(p),
+             pMax = ceil(p);
+
+        vec3 t = p - pMin;
+        //t = SMOOTHERSTEP(t); //Actually gives worse results due to
+                               //  the dumb simplicity of the underlying noise
+
+        #define VALUE_NOISE_3D(pos) hashTo1(vec4(pos, seed) * 450.0)
+        #define VALUE_NOISE_3D_X(y, z) mix(VALUE_NOISE_3D(vec3(pMin.x, y, z)), \
+                                           VALUE_NOISE_3D(vec3(pMax.x, y, z)), \
+                                           t.x)
+        #define VALUE_NOISE_3D_XY(z) mix(VALUE_NOISE_3D_X(pMin.y, z), \
+                                         VALUE_NOISE_3D_X(pMax.y, z), \
+                                         t.y)
+        return mix(VALUE_NOISE_3D_XY(pMin.z),
+                   VALUE_NOISE_3D_XY(pMax.z),
+                   t.z);
     }
 
     //Octave noise behaves the same regardless of dimension.
@@ -318,31 +349,32 @@ const SHADER_CODE_UTILS = """
     }
     float octaveNoise(float x, float seed, int nOctaves, float persistence) { IMPL_OCTAVE_NOISE(x, outNoise, persistence, seed, nOctaves, valueNoise, ,); return outNoise; }
     float octaveNoise(vec2 x, float seed, int nOctaves, float persistence) { IMPL_OCTAVE_NOISE(x, outNoise, persistence, seed, nOctaves, valueNoise, ,); return outNoise; }
+    float octaveNoise(vec3 x, float seed, int nOctaves, float persistence) { IMPL_OCTAVE_NOISE(x, outNoise, persistence, seed, nOctaves, valueNoise, ,); return outNoise; }
 
     #define PERLIN_MAX(nDimensions) (sqrt(float(nDimensions)) / 2.0)
     float perlinNoise(float x, float seed)
     {
         float xMin = floor(x),
-            xMax = ceil(x),
-            t = x - xMin;
+              xMax = ceil(x),
+              t = x - xMin;
 
         float value = mix(t         * sign(hashTo1(vec2(xMin, seed) * 450.0) - 0.5),
-                        (1.0 - t) * sign(hashTo1(vec2(xMax, seed) * 450.0) - 0.5),
-                        SHARPENER(t));
+                          (1.0 - t) * sign(hashTo1(vec2(xMax, seed) * 450.0) - 0.5),
+                          SHARPENER(t));
         return INV_LERP(-PERLIN_MAX(1), PERLIN_MAX(1), value);
     }
 
     vec2 perlinGradient2(float t)
     {
-        return randUnitVector(t);
+        return randUnitVector2(t);
     }
     float perlinNoise(vec2 p, float seed)
     {
         vec2 pMin = floor(p),
-            pMax = pMin + 1.0,
-            t = p - pMin;
+             pMax = pMin + 1.0,
+             t = p - pMin;
         vec4 pMinMax = vec4(pMin, pMax),
-            tMinMax = vec4(t, p - pMax);
+             tMinMax = vec4(t, p - pMax);
 
         #define PERLIN2_POINT(ab) dot(tMinMax.ab, \
                                     perlinGradient2(hashTo1(vec3(pMinMax.ab, seed) * 450.0)))
@@ -356,6 +388,30 @@ const SHADER_CODE_UTILS = """
                         mix(noiseMinXMaxY, noiseMaxXMaxY, t.x),
                         t.y);
         return INV_LERP(-PERLIN_MAX(2), PERLIN_MAX(2), value);
+    }
+
+    vec3 perlinGradient3(vec2 t)
+    {
+        return randUnitVector3(t);
+    }
+    float perlinNoise(vec3 p, float seed)
+    {
+        vec3 pMin = floor(p),
+             pMax = pMin + 1.0,
+             tMin = p - pMin,
+             tMax = p - pMax,
+             t = tMin;
+
+        t = SHARPENER(t);
+        #define PERLIN3_NOISE(xx, yy, zz) dot(vec3(t##xx .x, t##yy .y, t##zz .z), \
+                                              perlinGradient3(hashTo2(450.0 * vec4(seed, \
+                                                p##xx .x, p##yy .y, p##zz .z \
+                                              ))))
+        #define PERLIN3_NOISE_X(yy, zz) mix(PERLIN3_NOISE(Min, yy, zz), PERLIN3_NOISE(Max, yy, zz), t.x)
+        #define PERLIN3_NOISE_XY(zz) mix(PERLIN3_NOISE_X(Min, zz), PERLIN3_NOISE_X(Max, zz), t.y)
+        #define PERLIN3_NOISE_XYZ mix(PERLIN3_NOISE_XY(Min), PERLIN3_NOISE_XY(Max), t.z)
+        float value = PERLIN3_NOISE_XYZ;
+        return INV_LERP(-PERLIN_MAX(3), PERLIN_MAX(3), value);
     }
 
 
