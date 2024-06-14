@@ -224,7 +224,18 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
 
                 # If not maneuvering, maneuver.
                 if !player_is_busy(mission.player)
-                    if false
+                    p_dir = grid_dir(mission.player_rot.rot)
+                    p_voxel = mission.player_pos.get_voxel_position()
+                    dir_flipR = CabMovementDir(p_dir, 1)
+                    dir_flipL = CabMovementDir(p_dir, -1)
+                    if can_do_move_from(p_voxel, dir_flipR, LEGAL_MOVES[2], mission.grid)
+                        player_start_moving(mission.player, LEGAL_MOVES[2], dir_flipR)
+                    elseif can_do_move_from(p_voxel, dir_flipR, LEGAL_MOVES[3], mission.grid)
+                        player_start_moving(mission.player, LEGAL_MOVES[3], dir_flipR)
+                    elseif can_do_move_from(p_voxel, dir_flipR, LEGAL_MOVES[1], mission.grid)
+                        player_start_moving(mission.player, LEGAL_MOVES[1], dir_flipR)
+                    elseif can_drill_from(p_voxel, dir_flipR, v3f(1, 0, 0), mission.grid)
+                        player_start_drilling(mission.player, grid_dir(mission.player_rot.rot))
                     else
                         # If all else fails, turn in one direction.
                         next_rot = get_orientation(mission.player) >>
