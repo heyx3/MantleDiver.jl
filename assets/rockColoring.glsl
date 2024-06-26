@@ -85,7 +85,7 @@ MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, in float mi
     //Pick the surface data of the densest mineral in this rock.
     //TODO: Pick a mineral in a more interesting way.
     int densestI = 0;
-    for (int i = 1; i < N_MINERALS + 1; ++i)
+    for (int i = 1; i < N_MINERALS_AND_ROCK; ++i)
         if (mineralDensitiesThenRock[i] > mineralDensitiesThenRock[densestI])
             densestI = i;
     return mineralSurfaces[densestI];

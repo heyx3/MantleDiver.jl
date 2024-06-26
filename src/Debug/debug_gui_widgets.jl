@@ -116,8 +116,8 @@ function gui_debug_main_view(gui::DebugGui, mission::Mission, rendered_game::Tar
             gui.render_mode = value
         end
     end
-    render_mode_option("Regular", FramebufferRenderMode.regular)
-    render_mode_option("Greyscale", FramebufferRenderMode.char_greyscale)
+    render_mode_option("Final", FramebufferRenderMode.regular)
+    render_mode_option("Chars", FramebufferRenderMode.char_greyscale)
     render_mode_option("FG Shape", FramebufferRenderMode.foreground_shape)
     render_mode_option("FG Color", FramebufferRenderMode.foreground_color)
     render_mode_option("FG Density", FramebufferRenderMode.foreground_density)
@@ -398,9 +398,6 @@ function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
         )
         show_tex("Player View: Foreground", tex, true)
     end
-    let tex = mission.player_viewport.foreground_depth
-        show_tex("Player View: Foreground Depth", tex, true)
-    end
     let tex = gui.background_viz_target.attachment_colors[1].tex
         debug_render_uint_texture_viz(
             debug_assets,
@@ -408,6 +405,9 @@ function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
             gui.background_viz_target
         )
         show_tex("Player View: Background", tex, true)
+    end
+    let tex = mission.player_viewport.foreground_depth
+        show_tex("Player View: Foreground Depth", tex, true)
     end
     show_tex("Char Atlas", assets.chars_atlas, true)
     show_tex("Char UV Lookup", assets.chars_atlas_lookup)

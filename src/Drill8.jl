@@ -54,8 +54,6 @@ get_imgui_current_drawable_region() = Box2Df(
     size = convert(v2f, CImGui.GetContentRegionAvail())
 )
 
-const AUTO_MODE_FRAME_COUNT = 4000
-
 "
 Runs the game.
 In 'auto mode', plays the game with no fps cap and automatic maneuvers,
@@ -63,7 +61,7 @@ In 'auto mode', plays the game with no fps cap and automatic maneuvers,
 "
 function inner_main(auto_mode_frame_count::Optional{Int})::Cint
     auto_mode::Bool = exists(auto_mode_frame_count)
-    Bplus.@game_loop begin
+    return Bplus.@game_loop(begin
         INIT(
             @d8_debug(v2i(900, 950), v2i(900, 900)),
             "Drill8",
@@ -260,15 +258,16 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
             if auto_mode
                 println(stderr, "Done!")
             end
+
+            0
         end
-    end
-    return 0
+    end)
 end
 
 julia_main()::Cint = inner_main(nothing)
 
 # Precompile the game as much as possible when building this module,
 #    by running a session that plays itself automatically.
-inner_main(4000)
+inner_main(5000)
 
 end # module
