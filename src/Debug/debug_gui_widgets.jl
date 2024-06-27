@@ -413,3 +413,352 @@ function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
     show_tex("Char UV Lookup", assets.chars_atlas_lookup)
     show_tex("Palette", assets.palette)
 end
+
+
+###############################################
+##   OpenGL resource visualizations
+
+function short_type_name(T)::String
+    s = string(T)
+
+    # If it has type params, shorten each token separately.
+    (name, type_params...) = map(split(s, ('{', '}'))) do token
+        last_dot_pos = findlast('.', token)
+        return if exists(last_dot_pos)
+            token[last_dot_pos+1 : end]
+        else
+            token
+        end
+    end
+    s = if isempty(type_params)
+        name
+    else
+        "$name{$(join(type_params, ", "))}"
+    end
+
+    return s
+end
+
+function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
+                                 mission::Mission, assets::Assets)
+    basic_graphics::Bplus.BplusApp.Service_BasicGraphics = service_BasicGraphics()
+    gui_visualize_resource_category("B+ Globals", [
+        "Screen Triangle UVs" => BufferAsStruct(
+            basic_graphics.screen_triangle.vertex_data_sources[1].buf,
+            StaticBlockArray{3, v2f}
+        ),
+        "Screen Triangle Mesh" => basic_graphics.screen_triangle,
+
+        "Screen Quad UVs" => BufferAsStruct(
+            basic_graphics.screen_quad.vertex_data_sources[1].buf,
+            StaticBlockArray{4, v2f}
+        ),
+        "Screen Quad Mesh" => basic_graphics.screen_quad,
+
+        "Blit shader" => basic_graphics.blit,
+        "Empty mesh" => basic_graphics.empty_mesh
+    ])
+
+    gui_visualize_resource_category("Game Globals", [
+        "Char Palette" => assets.palette,
+        "Char Atlas" => assets.chars_atlas,
+        "Char Atlas Lookup" => assets.chars_atlas_lookup,
+        "Char UBO" => BufferAsStruct(
+            assets.chars_ubo,
+            CharRenderAssetBuffer
+        ),
+        "Char Render Shader" => assets.shader_render_chars,
+        "Blank Depth Tex" => assets.blank_depth_tex
+    ])
+
+    gui_visualize_resource_category("Mission", [
+        "Player Cam UBO" => BufferAsStruct(
+            mission.player_camera_ubo,
+            CameraDataBuffer
+        ),
+        "Player View Foreground Tex" => mission.player_viewport.foreground,
+        "Player View Background Tex" => mission.player_viewport.background,
+        "Player View Sampling UBO" => BufferAsStruct(
+            mission.player_viewport.ubo_read,
+            FrameBufferReadData
+        ),
+        "Player View Rendering UBO" => BufferAsStruct(
+            mission.player_viewport.ubo_write,
+            FrameBufferWriteData
+        )
+    ])
+
+    try_rocks = get_component(mission.ecs, Renderable_Rock)
+    if exists(try_rocks)
+        rocks::Renderable_Rock = try_rocks[1]
+        gui_visualize_resource_category("Mission rocks", [
+            "Rock shader" => rocks.shader,
+            (string(idx) => buf  for (idx, (chunk, buf)) in rocks.rock_data_buffers)...
+        ])
+    end
+
+    return nothing
+end
+
+function gui_visualize_resource_category(name::String, named_resources::Vector)
+    return GUI.gui_within_fold(name) do
+        for (name, resource) in named_resources
+            fg_color = GUI.gVec4(gui_resource_color(typeof(resource))...)
+            GUI.gui_with_style_color(CImGui.LibCImGui.ImGuiCol_Text, fg_color) do
+                CImGui.Text("$(short_type_name(typeof(resource))) $name ($(get_ogl_handle(resource))):")
+                CImGui.SameLine()
+                gui_visualize_resource(resource)
+            end
+        end
+    end
+end
+
+gui_resource_color(::Type) = (1, 0, 1, 1)
+gui_resource_color(::Type{GL.Program}) = (0.9, 0.9, 0.9, 1)
+gui_resource_color(::Type{GL.Texture}) = (0.6, 0.9, 1.0, 1)
+gui_resource_color(::Type{GL.View}) = (0.7, 1.0, 1.0, 1)
+gui_resource_color(::Type{GL.Buffer}) = (0.2, 0.9, 0.3, 1)
+gui_resource_color(::Type{GL.Mesh}) = (0.6, 1.0, 0.6, 1)
+
+
+gui_visualize_resource(r) = CImGui.Text(string(r))
+
+gui_visualize_resource(p::GL.Program) = GUI.gui_within_fold("$(length(p.uniforms)) uniforms, $(length(p.uniform_blocks)) UBO's, $(length(p.storage_blocks)) SSBO's") do
+    CImGui.Text("Uniforms:")
+    GUI.gui_with_indentation() do 
+        for (name, data) in p.uniforms
+            CImGui.Text("$name: $(data.type)")
+        end
+        if isempty(p.uniforms)
+            CImGui.Text("[none]")
+        end
+    end
+
+    CImGui.Text("UBO's:")
+    GUI.gui_with_indentation() do
+        for (name, data) in p.uniform_blocks
+            CImGui.Text("$name: $(data.byte_size) bytes")
+        end
+        if isempty(p.uniform_blocks)
+            CImGui.Text("[none]")
+        end
+    end
+
+    CImGui.Text("SSBO's:")
+    GUI.gui_with_indentation() do
+        for (name, data) in p.storage_blocks
+            CImGui.Text("$name: $(data.byte_size) bytes")
+        end
+        if isempty(p.storage_blocks)
+            CImGui.Text("[none]")
+        end
+    end
+end
+
+#TODO: Optionally query a texture's pixels
+function gui_visualize_resource(t::GL.Texture)
+    description = string(
+        if t.type == TexTypes.oneD
+            "1D ($(t.size.x) pixels)"
+        elseif t.type == TexTypes.twoD
+            "$(t.size.x)x$(t.size.y)"
+        elseif t.type == TexTypes.threeD
+            "3D $(t.size.x)x$(t.size.y)$(t.size.z)"
+        elseif t.type == TexTypes.cube_map
+            "Cube $(t.size.x)x$(t.size.x)"
+        else
+            "UNKNOWN_TYPE($(t.type), $(t.size))"
+        end,
+        " ", string(GL.get_ogl_enum(t.format))[3:end]
+    )
+    GUI.gui_within_fold(description) do
+        CImGui.Text("N Mips: $(t.n_mips)")
+
+        CImGui.Text("Allocated views: ")
+        GUI.gui_with_indentation() do
+            for (view_params, view) in t.known_views
+                CImGui.Text("$(GL.get_ogl_handle(view)):")
+                CImGui.SameLine()
+                if exists(view_params)
+                    gui_visualize_resource(view_params)
+                else
+                    CImGui.Text("[default]")
+                end
+            end
+            if isempty(t.known_views)
+                CImGui.Text("[none yet]")
+            end
+        end
+
+        CImGui.Text("Default sampler: ")
+        CImGui.SameLine()
+        gui_visualize_resource(t.sampler)
+
+        if exists(t.depth_stencil_sampling)
+            CImGui.Text("Depth/Stencil hybrid mode: $(t.depth_stencil_sampling)")
+        end
+
+        if t.swizzle != SwizzleRGBA()
+            CImGui.Text("Swizzling: $(t.swizzle)")
+        end
+    end
+end
+
+function gui_visualize_resource(s::GL.TexSampler)
+    DEFAULT_SAMPLER = typeof(s)()
+    CImGui.Text(string(
+        "<",
+
+        if exists(s.depth_comparison_mode)
+            "depthCompare=$(s.depth_comparison_mode) "
+        else
+            ""
+        end,
+
+        if s.wrapping isa E_WrapModes
+            s.wrapping
+        elseif all(w == s.wrapping[1] for w in s.wrapping)
+            s.wrapping[0]
+        else
+            "($(join(s.wrapping, "x")))"
+        end,
+
+        " pixels=", s.pixel_filter,
+        if isnothing(s.mip_filter)
+            " (no mips)"
+        else
+            " mips=$(s.mip_filter)"
+        end,
+
+        if !isone(s.anisotropy)
+            " aniso=$(s.anisotropy)"
+        else
+            ""
+        end,
+
+        let has_mip_offset = !iszero(s.mip_offset),
+            has_mip_range = (s.mip_range != DEFAULT_SAMPLER.mip_range)
+            if !has_mip_offset && !has_mip_range
+                ""
+            elseif !has_mip_offset
+                " mips=[$(min_inclusive(s.mip_range)) to $(max_exclusive(s.mip_range))]"
+            elseif !has_mip_range
+                " mip+=$(s.mip_offset)"
+            else
+                " outMip=clamp(mip+$(s.mip_offset), $(min_inclusive(s.mip_range)), $(max_exclusive(s.mip_range)))"
+            end
+        end,
+
+        if s.cubemap_seamless != DEFAULT_SAMPLER.cubemap_seamless
+            if s.cubemap_seamless
+                " seamlessCubemapping"
+            else
+                " roughCubemapping"
+            end
+        else
+            ""
+        end,
+
+        ">"
+    ))
+end
+function gui_visualize_resource(vp::GL.SimpleViewParams)
+    changes_mip::Bool = (vp.mip_level != 1)
+    picks_layer::Bool = exists(vp.layer)
+    changes_format::Bool = exists(vp.apparent_format)
+    CImGui.Text(
+        if !changes_mip && !picks_layer && !changes_format
+            "< Plain Image (non-sampling) view >"
+        else
+            string(
+                "< Image (non-sampling) view: ",
+                changes_mip ? " mip=$(vp.mip_level)" : "",
+                picks_layer ? " layer=$(vp.layer)" : "",
+                changes_format ? "format=$(string(GL.get_ogl_enum(vp.apparent_format))[3:end])" : "",
+                " >"
+            )
+        end
+    )
+end
+
+gui_visualize_resource(b::GL.Buffer) = CImGui.Text(string(b.is_mutable_from_cpu ? "" : "CPU-Immutable, ",
+                                                           b.byte_size, " bytes"))
+
+function gui_visualize_resource(m::GL.Mesh)
+    GUI.gui_within_fold(string(m.type, "; ",
+                        exists(m.index_data) ? "indexed; " : "",
+                        length(m.vertex_data_sources), " vertex buffers; ",
+                        length(m.vertex_data), "vertex attributes")) do
+        CImGui.Text("Vertex buffers:")
+        GUI.gui_with_indentation() do
+            for source in m.vertex_data_sources
+                CImGui.Text(string(
+                    "<",
+                    " handle=$(GL.get_ogl_handle(source.buf))",
+                    (iszero(source.buf_byte_offset) ?  "" : " byteOffset=$(source.buf_byte_offset)"),
+                    " elementByteSize=$(source.element_byte_size)",
+                    " >"
+                ))
+            end
+        end
+
+        CImGui.Text("Vertex attributes:")
+        GUI.gui_with_indentation() do
+            for a in m.vertex_data
+                CImGui.Text(string(
+                    "<",
+                    (iszero(a.per_instance) ? "" : "perInstance=$(Int(a.per_instance))"),
+                    " vertBufferIdx=$(a.data_source_idx)",
+                    " fieldByteOffset=$(a.field_byte_offset)",
+                    " type=$(a.field_type)", #TODO: Pretty-printing for vertex data type
+                    " >"
+                ))
+            end
+        end
+
+        if exists(m.index_data)
+            CImGui.Text(string(
+                "Indices: <",
+                " type=", m.index_data.type,
+                " buffer=", m.index_data.buffer,
+                ">"
+            ))
+        end
+    end
+end
+
+"
+Decorator to visualize a buffer as storing some kind of data structure.
+If it's an array, use `StaticBlockArray{N, T}`.
+"
+struct BufferAsStruct
+    b::Buffer
+    T::Type
+end
+GL.get_ogl_handle(b::BufferAsStruct) = GL.get_ogl_handle(b.b)
+function gui_visualize_resource(bs::BufferAsStruct)
+    GUI.gui_with_fold(string("< ",
+                             short_type_name(bs.T), ", ",
+                             bs.b.is_mutable_from_cpu ? "" : "CPU-Immutable, ",
+                             GL.block_byte_size(bs.T), " bytes, ",
+                             ">")) do
+        data::bs.T = GL.get_buffer_data(bs.b, bs.T)
+        gui_visualize_resource(data)
+    end
+end
+
+function gui_visualize_resource(d::GL.AbstractOglBlock)
+    GUI.gui_with_indentation() do
+        for name in propertynames(d)
+            value = getproperty(d, name)
+            CImGui.Text("$name: $value")
+        end
+    end
+end
+function gui_visualize_resource(a::GL.StaticBlockArray{N, T}) where {N, T}
+    for i in 1:N
+        CImGui.Text("$i: ")
+        CImGui.SameLine()
+        gui_visualize_resource(a[i])
+    end
+end

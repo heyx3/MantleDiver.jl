@@ -99,7 +99,7 @@ function debug_render_uint_texture_viz(assets::DebugAssets,
         cull_mode = GL.FaceCullModes.off,
         depth_test = GL.ValueTests.pass,
         depth_write = false,
-        viewport = Box2Du(min=v2u(1, 1), size=(exists(output) ? output.size : GL.get_window_size))
+        viewport = Box2Du(min=v2u(1, 1), size=(exists(output) ? output.size : GL.get_window_size()))
     )
     GL.with_render_state(render_state) do
         set_uniform(assets.uint_tex_display_shader, "u_tex", input)
