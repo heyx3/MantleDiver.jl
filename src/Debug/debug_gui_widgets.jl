@@ -6,6 +6,115 @@
     fast_forward
 )
 
+
+mutable struct GuiPixelQuery
+    last_queried_value::Union{vRGBAf, vRGBAu, vRGBAi, Float32, UInt8}
+    next_pixel::Union{Int, v2i, v3i}
+    #TODO: Mip level option
+end
+function GuiPixelQuery(tex::GL.Texture)
+    next_pixel = if tex.type == GL.TexTypes.oneD
+        1
+    elseif tex.type == GL.TexTypes.twoD
+        one(v2i)
+    elseif tex.type == GL.TexTypes.threeD
+        one(v3i)
+    elseif tex.type == GL.TexTypes.cube_map
+        one(v3i)
+    else
+        error("Unhandled: ", tex.type)
+    end
+
+    initial_value = if GL.is_depth_only(tex.format)
+        Float32(0.5)
+    elseif GL.is_stencil_only(tex.format)
+        0xaa
+    elseif GL.is_depth_and_stencil(tex.format)
+        error("Depth/stencil hybrid textures not currently supported")
+    elseif GL.is_integer(tex.format)
+        if GL.is_signed(tex.format)
+            zero(vRGBAi)
+        else
+            zero(vRGBAu)
+        end
+    else
+        zero(vRGBAf)
+    end
+
+    return GuiPixelQuery(initial_value, next_pixel)
+end
+function gui_pixel_query(tex::GL.Texture, q::GuiPixelQuery)
+    # Make sure the query data types match the current texture.
+    let new_query_data = GuiPixelQuery(tex)
+        if typeof(q.last_queried_value) != typeof(new_query_data.last_queried_value)
+            q.last_queried_value = new_query_data.last_queried_value
+        end
+        if typeof(q.next_pixel) != typeof(new_query_data.next_pixel)
+            q.next_pixel = new_query_data.next_pixel
+        end
+    end
+
+    # Provide the GUI for the pixel to query.
+    if tex.type == GL.TexTypes.oneD
+        @c CImGui.InputInt("pixel", &q.next_pixel)
+        q.next_pixel = clamp(q.next_pixel, 1, convert(Int, tex.size.x))
+    elseif tex.type == GL.TexTypes.twoD
+        @c CImGui.InputInt2("pixel", &q.next_pixel)
+        q.next_pixel = clamp(q.next_pixel, one(v2i), convert(v2i, tex.size.xy))
+    elseif tex.type == GL.TexTypes.threeD
+        @c CImGui.InputInt3("pixel", &q.next_pixel)
+        q.next_pixel = clamp(q.next_pixel, one(v3i), convert(v3i, tex.size))
+    elseif tex.type == GL.TexTypes.cube_map
+        @c CImGui.InputInt2("pixel", &q.next_pixel)
+        let i = Ref(q.next_pixel.z)
+            @c CImGui.InputInt("face", &i)
+            q.next_pixel = v3i(q.next_pixel.xy, i)
+        end
+        q.next_pixel = clamp(q.next_pixel, one(v3i), Math.vappend(tex.size.xy, Int32(6)))
+    else
+        error("Unhandled: ", tex.type)
+    end
+
+    # Provide a printout of the last queried pixel.
+    CImGui.Text(string(q.last_queried_value))
+
+    # Provide a button to execute the query.
+    if CImGui.Button("Sample", (100, 40))
+        if tex.type == GL.TexTypes.oneD
+            array = Vector{typeof(q.last_queried_value)}(undef, 1)
+            GL.get_tex_pixels(
+                tex, array,
+                GL.TexSubset(Box1Du(min=Vec(q.next_pixel), max=Vec(q.next_pixel)))
+            )
+            q.last_queried_value = array[1]
+        elseif tex.type == GL.TexTypes.twoD
+            array = Array{typeof(q.last_queried_value)}(undef, (1, 1))
+            GL.get_tex_pixels(
+                tex, array,
+                GL.TexSubset(Box2Du(min=q.next_pixel, max=q.next_pixel))
+            )
+            q.last_queried_value = array[1]
+        elseif tex.type == GL.TexTypes.threeD
+            array = Array{typeof(q.last_queried_value)}(undef, (1, 1, 1))
+            GL.get_tex_pixels(
+                tex, array,
+                GL.TexSubset(Box3Du(min=q.next_pixel, max=q.next_pixel))
+            )
+            q.last_queried_value = array[1]
+        elseif tex.type == GL.TexTypes.cube_map
+            array = Vector{typeof(q.last_queried_value)}(undef, 1)
+            GL.get_tex_pixels(
+                tex, array,
+                GL.TexSubset(Box3Du(min=q.next_pixel, max=q.next_pixel))
+            )
+            q.last_queried_value = array[1]
+        else
+            error("Unhandled: ", tex.type)
+        end
+    end
+end
+
+
 mutable struct DebugGui
     # Gameplay speed control:
     gameplay_speed::E_DebugGuiSpeed
@@ -25,6 +134,9 @@ mutable struct DebugGui
     foreground_viz_target::Target
     background_viz_target::Target
 
+    # Resource data panel:
+    texture_queries::Dict{GL.Ptr_Texture, GuiPixelQuery}
+
     DebugGui() = new(
         DebugGuiSpeed.play, 3,
         FramebufferRenderMode.regular,
@@ -43,7 +155,8 @@ mutable struct DebugGui
                          SimpleFormatComponents.RGBA,
                          SimpleFormatBitDepths.B8),
             DepthStencilFormats.depth_16u
-        )
+        ),
+        Dict{GL.Ptr_Texture, GuiPixelQuery}()
     )
 end
 Base.close(dg::DebugGui) = close.((
@@ -203,7 +316,6 @@ end
 
 ##########################################
 ##   Maneuvers
-
 
 const TURN_INCREMENT_DEG = @f32(30)
 
@@ -445,19 +557,19 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
     gui_visualize_resource_category("B+ Globals", [
         "Screen Triangle UVs" => BufferAsStruct(
             basic_graphics.screen_triangle.vertex_data_sources[1].buf,
-            StaticBlockArray{3, v2f}
+            SVector{3, Vec{2, Int8}}
         ),
         "Screen Triangle Mesh" => basic_graphics.screen_triangle,
 
         "Screen Quad UVs" => BufferAsStruct(
             basic_graphics.screen_quad.vertex_data_sources[1].buf,
-            StaticBlockArray{4, v2f}
+            SVector{4, Vec{2, Int8}}
         ),
         "Screen Quad Mesh" => basic_graphics.screen_quad,
 
         "Blit shader" => basic_graphics.blit,
         "Empty mesh" => basic_graphics.empty_mesh
-    ])
+    ], gui)
 
     gui_visualize_resource_category("Game Globals", [
         "Char Palette" => assets.palette,
@@ -469,7 +581,7 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
         ),
         "Char Render Shader" => assets.shader_render_chars,
         "Blank Depth Tex" => assets.blank_depth_tex
-    ])
+    ], gui)
 
     gui_visualize_resource_category("Mission", [
         "Player Cam UBO" => BufferAsStruct(
@@ -486,7 +598,7 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
             mission.player_viewport.ubo_write,
             FrameBufferWriteData
         )
-    ])
+    ], gui)
 
     try_rocks = get_component(mission.ecs, Renderable_Rock)
     if exists(try_rocks)
@@ -494,20 +606,20 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
         gui_visualize_resource_category("Mission rocks", [
             "Rock shader" => rocks.shader,
             (string(idx) => buf  for (idx, (chunk, buf)) in rocks.rock_data_buffers)...
-        ])
+        ], gui)
     end
 
     return nothing
 end
 
-function gui_visualize_resource_category(name::String, named_resources::Vector)
+function gui_visualize_resource_category(name::String, named_resources::Vector, gui::DebugGui)
     return GUI.gui_within_fold(name) do
         for (name, resource) in named_resources
             fg_color = GUI.gVec4(gui_resource_color(typeof(resource))...)
             GUI.gui_with_style_color(CImGui.LibCImGui.ImGuiCol_Text, fg_color) do
                 CImGui.Text("$(short_type_name(typeof(resource))) $name ($(get_ogl_handle(resource))):")
                 CImGui.SameLine()
-                gui_visualize_resource(resource)
+                gui_visualize_resource(resource, gui)
             end
         end
     end
@@ -521,9 +633,9 @@ gui_resource_color(::Type{GL.Buffer}) = (0.2, 0.9, 0.3, 1)
 gui_resource_color(::Type{GL.Mesh}) = (0.6, 1.0, 0.6, 1)
 
 
-gui_visualize_resource(r) = CImGui.Text(string(r))
+gui_visualize_resource(r, gui::DebugGui) = CImGui.Text(string(r))
 
-gui_visualize_resource(p::GL.Program) = GUI.gui_within_fold("$(length(p.uniforms)) uniforms, $(length(p.uniform_blocks)) UBO's, $(length(p.storage_blocks)) SSBO's") do
+gui_visualize_resource(p::GL.Program, gui::DebugGui) = GUI.gui_within_fold("$(length(p.uniforms)) uniforms, $(length(p.uniform_blocks)) UBO's, $(length(p.storage_blocks)) SSBO's") do
     CImGui.Text("Uniforms:")
     GUI.gui_with_indentation() do 
         for (name, data) in p.uniforms
@@ -555,8 +667,7 @@ gui_visualize_resource(p::GL.Program) = GUI.gui_within_fold("$(length(p.uniforms
     end
 end
 
-#TODO: Optionally query a texture's pixels
-function gui_visualize_resource(t::GL.Texture)
+function gui_visualize_resource(t::GL.Texture, gui::DebugGui)
     description = string(
         if t.type == TexTypes.oneD
             "1D ($(t.size.x) pixels)"
@@ -569,9 +680,16 @@ function gui_visualize_resource(t::GL.Texture)
         else
             "UNKNOWN_TYPE($(t.type), $(t.size))"
         end,
-        " ", string(GL.get_ogl_enum(t.format))[3:end]
+        " ", string(GL.ModernGLbp.GLENUM(GL.get_ogl_enum(t.format)))[3:end]
     )
     GUI.gui_within_fold(description) do
+        query_gui = get!(() -> GuiPixelQuery(t),
+                         gui.texture_queries, GL.get_ogl_handle(t))
+        CImGui.Text("Pixel query: ")
+        GUI.gui_with_indentation() do
+            gui_pixel_query(t, query_gui)
+        end
+
         CImGui.Text("N Mips: $(t.n_mips)")
 
         CImGui.Text("Allocated views: ")
@@ -580,7 +698,7 @@ function gui_visualize_resource(t::GL.Texture)
                 CImGui.Text("$(GL.get_ogl_handle(view)):")
                 CImGui.SameLine()
                 if exists(view_params)
-                    gui_visualize_resource(view_params)
+                    gui_visualize_resource(view_params, gui)
                 else
                     CImGui.Text("[default]")
                 end
@@ -592,7 +710,7 @@ function gui_visualize_resource(t::GL.Texture)
 
         CImGui.Text("Default sampler: ")
         CImGui.SameLine()
-        gui_visualize_resource(t.sampler)
+        gui_visualize_resource(t.sampler, gui)
 
         if exists(t.depth_stencil_sampling)
             CImGui.Text("Depth/Stencil hybrid mode: $(t.depth_stencil_sampling)")
@@ -604,7 +722,7 @@ function gui_visualize_resource(t::GL.Texture)
     end
 end
 
-function gui_visualize_resource(s::GL.TexSampler)
+function gui_visualize_resource(s::GL.TexSampler, gui::DebugGui)
     DEFAULT_SAMPLER = typeof(s)()
     CImGui.Text(string(
         "<",
@@ -662,7 +780,7 @@ function gui_visualize_resource(s::GL.TexSampler)
         ">"
     ))
 end
-function gui_visualize_resource(vp::GL.SimpleViewParams)
+function gui_visualize_resource(vp::GL.SimpleViewParams, gui::DebugGui)
     changes_mip::Bool = (vp.mip_level != 1)
     picks_layer::Bool = exists(vp.layer)
     changes_format::Bool = exists(vp.apparent_format)
@@ -681,14 +799,14 @@ function gui_visualize_resource(vp::GL.SimpleViewParams)
     )
 end
 
-gui_visualize_resource(b::GL.Buffer) = CImGui.Text(string(b.is_mutable_from_cpu ? "" : "CPU-Immutable, ",
-                                                           b.byte_size, " bytes"))
+gui_visualize_resource(b::GL.Buffer, gui::DebugGui) = CImGui.Text(string(b.is_mutable_from_cpu ? "" : "CPU-Immutable, ",
+                                                          b.byte_size, " bytes"))
 
-function gui_visualize_resource(m::GL.Mesh)
+function gui_visualize_resource(m::GL.Mesh, gui::DebugGui)
     GUI.gui_within_fold(string(m.type, "; ",
                         exists(m.index_data) ? "indexed; " : "",
                         length(m.vertex_data_sources), " vertex buffers; ",
-                        length(m.vertex_data), "vertex attributes")) do
+                        length(m.vertex_data), " vertex attributes")) do
         CImGui.Text("Vertex buffers:")
         GUI.gui_with_indentation() do
             for source in m.vertex_data_sources
@@ -729,25 +847,26 @@ end
 
 "
 Decorator to visualize a buffer as storing some kind of data structure.
-If it's an array, use `StaticBlockArray{N, T}`.
+Supports bitstypes, block types (`AbstractOglBlock` and `StaticBlockArray`),
+    and `StaticArrays.SVector{N, T}`.
 "
 struct BufferAsStruct
     b::Buffer
     T::Type
 end
 GL.get_ogl_handle(b::BufferAsStruct) = GL.get_ogl_handle(b.b)
-function gui_visualize_resource(bs::BufferAsStruct)
-    GUI.gui_with_fold(string("< ",
-                             short_type_name(bs.T), ", ",
-                             bs.b.is_mutable_from_cpu ? "" : "CPU-Immutable, ",
-                             GL.block_byte_size(bs.T), " bytes, ",
-                             ">")) do
+function gui_visualize_resource(bs::BufferAsStruct, gui::DebugGui)
+    GUI.gui_within_fold(string("< ",
+                               short_type_name(bs.T), ", ",
+                               bs.b.is_mutable_from_cpu ? "" : "CPU-Immutable, ",
+                               GL.block_byte_size(bs.T), " bytes, ",
+                               ">")) do
         data::bs.T = GL.get_buffer_data(bs.b, bs.T)
-        gui_visualize_resource(data)
+        gui_visualize_resource(data, gui)
     end
 end
 
-function gui_visualize_resource(d::GL.AbstractOglBlock)
+function gui_visualize_resource(d::GL.AbstractOglBlock, gui::DebugGui)
     GUI.gui_with_indentation() do
         for name in propertynames(d)
             value = getproperty(d, name)
@@ -755,10 +874,10 @@ function gui_visualize_resource(d::GL.AbstractOglBlock)
         end
     end
 end
-function gui_visualize_resource(a::GL.StaticBlockArray{N, T}) where {N, T}
+function gui_visualize_resource(a::Union{GL.StaticBlockArray{N, T}, StaticVector{N, T}}, gui::DebugGui) where {N, T}
     for i in 1:N
         CImGui.Text("$i: ")
         CImGui.SameLine()
-        gui_visualize_resource(a[i])
+        gui_visualize_resource(a[i], gui)
     end
 end

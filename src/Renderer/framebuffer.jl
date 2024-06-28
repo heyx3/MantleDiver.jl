@@ -140,7 +140,7 @@ const UBO_CODE_FRAMEBUFFER_WRITE_DATA = """
 
     $SHADER_CODE_FRAMEBUFFER_PACKING
 
-    out uvec2 fOut_packed;
+    out uvec4 fOut_packed;
 
     void writeFramebuffer(MaterialSurface surf) {
         //In background mode, we need to discard the front-most surface if it is transparent,
@@ -151,10 +151,11 @@ const UBO_CODE_FRAMEBUFFER_WRITE_DATA = """
             discard;
 
         //Pack the surface data appropriately.
+        fOut_packed = uvec4(0, 0, 0, 0);
         if (u_output.foreground_mode)
-            fOut_packed = packForeground(surf);
+            fOut_packed.xy = packForeground(surf);
         else
-            fOut_packed = uvec2(packBackground(surf, !isFrontmostSurface), 0);
+            fOut_packed.x = packBackground(surf, !isFrontmostSurface);
     }
 """
 

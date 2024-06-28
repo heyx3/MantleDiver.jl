@@ -9,8 +9,8 @@ mutable struct WorldViewport
 
     resolution::v2i
 
-    ubo_read_data::FrameBufferReadData
-    ubo_write_data::FrameBufferWriteData
+    ubo_read_data::FrameBufferReadData{Vector{UInt8}}
+    ubo_write_data::FrameBufferWriteData{Vector{UInt8}}
     ubo_read::Buffer
     ubo_write::Buffer
 
@@ -93,7 +93,7 @@ function render_to_framebuffer(callback_draw_world,
             viewport.ubo_write_data.tex_foreground_depth = GL.get_ogl_handle(GL.get_view(assets.blank_depth_tex))
             GL.set_buffer_data(viewport.ubo_write, viewport.ubo_write_data)
             GL.target_clear(viewport.foreground_target,
-                            vRGBAu(Val(~zero(UInt32))),
+                            vRGBAu(i -> ~zero(UInt32)),
                             1)
             GL.target_clear(viewport.foreground_target, Float32(1))
             GL.target_activate(viewport.foreground_target)
