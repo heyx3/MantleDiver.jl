@@ -163,7 +163,7 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                 GL.target_clear(debug_game_render, vRGBAf(1, 0, 1, 0))
                 target_activate(debug_game_render)
             end begin
-                Gl.clear_screen(vRGBAf(1, 0, 1, 0))
+                GL.clear_screen(vRGBAf(1, 0, 1, 0))
             end
             post_process_framebuffer(mission.player_viewport, assets, player_viewport_settings)
             @d8_debug target_activate(nothing)
