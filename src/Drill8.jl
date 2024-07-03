@@ -20,8 +20,8 @@ Bplus.@make_toggleable_asserts d8_
 
 
 include("Renderer/shader_utils.jl")
-include("Renderer/framebuffer.jl")
 include("Renderer/chars.jl")
+include("Renderer/framebuffer.jl")
 include("Renderer/assets.jl")
 include("Renderer/world_viewport.jl")
 

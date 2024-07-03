@@ -37,12 +37,12 @@ Each rock voxel has a specific spread of minerals;
 
 The following things can appear within the mining area:
 
-* Pressurized Lava which explodes when melted, causing nearby rock to melt
+* Pressurized Lava which explodes when drilled, causing nearby rock to melt
 * A flow of liquid mantle, which will push your pod along it if you move into it
 * "Uber-mineral" blocks which contain many valuable materials within it
-* Remnants of earlier mining pods and the paths they carved out, which could hint at mineral locations
+* Remnants of earlier mining pods and the paths they carved out, exposing a rich mineral vein
 * Unstable rock which collapses if you sit the pod on top of it
-* Areas with black smoke that obscure the physical view (but not other sensors)
+* Hot areas with black smoke that cause gradual hull damage and obscure the physical view (but not other sensors)
 
 As you go deeper, more interesting and dangerous things appear:
 
@@ -91,12 +91,13 @@ The pod's properties and upgrades are as follows:
   * This is a special upgrade requiring multiple types of materials.
 * You can upgrade rock storage to vaporize the rock, removing the need to store it
   * This is a special upgrade requiring multiple types of materials.
-* Upgraded with the mineral *kertil*, exccept as mentioned above
+* Upgraded with the mineral *kertil*, except as mentioned above
 
 ## Hull Integrity
 
 * Many pod maneuvers add stress to the hull, such as fall-damage.
 * Too much stress, and it starts collapsing. When this happens, the player is immediately ejected with their mined material, back to home. The mission is over.
+* Can be upgraded for overall health and/or resistance to heat
 * Upgraded with the material *gelstance*
 
 ## Drill

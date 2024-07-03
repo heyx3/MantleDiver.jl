@@ -88,6 +88,9 @@ MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, in float mi
     for (int i = 1; i < N_MINERALS_AND_ROCK; ++i)
         if (mineralDensitiesThenRock[i] > mineralDensitiesThenRock[densestI])
             densestI = i;
+    MaterialSurface surface = mineralSurfaces[densestI];
+
     //TODO: Fade towards plain rock at the edges of all rocks.
-    return mineralSurfaces[densestI];
+
+    return surface;
 }

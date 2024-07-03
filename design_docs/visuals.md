@@ -99,3 +99,47 @@ Each mineral also has its own choice of foreground shape.
 
 * We could create an interesting distortion effect by switching the char atlas lookup texture (which maps a Shape/Density pair to the UV rect for the corresponding char) to use linear instead of clamp sampling. This might be useful for damage or mysterious environmental objects.
 * Smoke would look very cool, we should think about how to implement it (many small billboards? Volumetric cube?)
+
+## Assets needed
+
+First, we need a font texture ("font-map"), containing all chars.
+The simplest option is to load a real font on startup and generate the font-map.
+
+Next, we need some way to convert a shape+density value to a particular character in the font-map.
+We will define a data specification mapping shape+density values to chars,
+    and generate a texture mapping shape+density (represented as pixel Y and X respectively)
+    directly to a font-map UV rectangle.
+Note that different shape+density values are allowed to map to the same char;
+    an important use for this is outlined in the [section below](#direct-rendering-of-chars).
+
+Finally, we need a color palette.
+This is simply a Nx1 texture, mapping color index to RGB.
+
+## Direct rendering of chars
+
+Because the user-interface is rendered like the 3D world,
+    we definitely want an easier way for some 3D surfaces to output characters directly.
+This will be accomplished with special shape types that cover the whole range of ASCII chars:
+    "lowercase letters", "uppercase letters", "digits", "punctuation".
+As noted above, it's OK for the same char to appear in two different shape types,
+    so these new shapes will not affect the existing ones.
+
+GLSL doesn't support string/char literals, so we'll add some GLSL and Julia convenience functions
+    to convert a char to a shape+density value.
+Perhaps a small UBO can directly map ascii codes to shape+density,
+    however this wouldn't scale to UTF-8 chars.
+
+## Screen Segmentation
+
+The border between the inside of the pod (i.e. the UI) and the rest of the world is the "screen segmentation".
+It will be drawn as a thick line *in-between* character grid cells,
+    making it the only part of the render that isn't done through the character system.
+
+The segmentation will be composed of straight lines and rounded 90-degree corners.
+Rendering is therefore done in two batches:
+1. All straight-lines, each defined as:
+   1. A starting corner of the character grid, represented as the cell immediately after that corner.
+   2. An ending corner of the character grid, represented in the same way.
+2. All corner lines, each defined as:
+   1.  The cell of the chracter grid that they cross through (being rounded corners, they don't stay perfectly between cells)
+   2.  Which corner they sit on (e.x. {0, 0} for minXY; {1, 1} for maxXY)

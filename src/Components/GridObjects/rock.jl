@@ -280,16 +280,13 @@ end
                 in flat vec3 fIn_normal;
 
                 $UBO_CODE_FRAMEBUFFER_WRITE_DATA
-
+                $SHADER_CODE_DIRECT_CHAR_OUTPUT
                 $SHADER_CODE_UTILS
 
                 #define N_MINERALS $N_MINERALS
                 #define N_MINERALS_AND_ROCK $(N_MINERALS + 1)
                 $(map(Mineral.instances()) do mineral
                     return """#define MINERAL_$mineral $(Int(mineral))
-                """ end...)
-                $(map(CharShapeType.instances()) do shape
-                    return """#define SHAPE_$shape $(Int(shape))
                 """ end...)
                 #line 0
 

@@ -28,102 +28,112 @@ const DENSITY_BIT_MASK = DENSITY_PACKED_MAX
 
 "Defines GLSL utilities for packing and unpacking framebuffer data"
 const SHADER_CODE_FRAMEBUFFER_PACKING = """
-//The surface properties that shaders should output.
-//Further below is code to pack and unpack them for the framebuffer.
-struct MaterialSurface
-{
-    uint foregroundShape;
+    #ifndef FRAMEBUFFER_PACKING_H
+    #define FRAMEBUFFER_PACKING_H
 
-    uint foregroundColor;
-    uint backgroundColor;
-
-    float foregroundDensity;
-    float backgroundDensity;
-
-    bool isTransparent;
-};
-
-uint packColor(uint value)
-{
-    value = clamp(value, uint(0), uint($COLOR_PACKED_MAX));
-    value &= $COLOR_BIT_MASK;
-    return value;
-}
-uint unpackColor(uint sampleR)
-{
-    return sampleR & $COLOR_BIT_MASK;
-}
-
-uint packShape(uint value)
-{
-    value = clamp(value, uint(0), uint($(Int(SHAPE_PACKED_MAX))));
-    value &= $(Int(SHAPE_BIT_MASK));
-    value <<= $(Int(COLOR_BITS));
-    return value;
-}
-uint unpackShape(uint value)
-{
-    return (value >> $(Int(COLOR_BITS))) & $(Int(SHAPE_BIT_MASK));
-}
-
-uint packDensity(float value)
-{
-    value *= float($(Int(DENSITY_PACKED_MAX)));
-    uint roundedValue = clamp(uint(value), uint(0), uint($(Int(DENSITY_PACKED_MAX))));
-    return (roundedValue & $(Int(DENSITY_BIT_MASK)));
-}
-float unpackDensity(uint sampleR)
-{
-    return float(sampleR & $(Int(DENSITY_BIT_MASK))) /
-             float($(Int(DENSITY_PACKED_MAX)));
-}
-
-uvec2 packForeground(MaterialSurface surf)
-{
-    return uvec2(
-        packShape(surf.foregroundShape) |
-            packColor(surf.foregroundColor),
-        packDensity(surf.foregroundDensity) |
-            ((surf.isTransparent ? 1 : 0) << $(Int(DENSITY_BITS)))
-    );
-}
-uint packBackground(MaterialSurface surf, bool isPartiallyOccluded)
-{
-    uint color;
-    float density;
-    if (!isPartiallyOccluded || surf.isTransparent)
+    //The surface properties that shaders should output.
+    //Further below is code to pack and unpack them for the framebuffer.
+    struct MaterialSurface
     {
-        color = surf.backgroundColor;
-        density = surf.backgroundDensity;
+        uint foregroundShape;
+
+        uint foregroundColor;
+        uint backgroundColor;
+
+        float foregroundDensity;
+        float backgroundDensity;
+
+        bool isTransparent;
+    };
+
+    /////////////////////////////////////////
+
+    uint packColor(uint value)
+    {
+        value = clamp(value, uint(0), uint($COLOR_PACKED_MAX));
+        value &= $COLOR_BIT_MASK;
+        return value;
     }
-    else
+    uint unpackColor(uint sampleR)
     {
-        color = surf.foregroundColor;
-        density = surf.foregroundDensity;
+        return sampleR & $COLOR_BIT_MASK;
     }
 
-    return packColor(color) | (packDensity(density) << $(Int(COLOR_BITS)));
-}
+    uint packShape(uint value)
+    {
+        value = clamp(value, uint(0), uint($(Int(SHAPE_PACKED_MAX))));
+        value &= $(Int(SHAPE_BIT_MASK));
+        value <<= $(Int(COLOR_BITS));
+        return value;
+    }
+    uint unpackShape(uint value)
+    {
+        return (value >> $(Int(COLOR_BITS))) & $(Int(SHAPE_BIT_MASK));
+    }
 
-//The 'IsTransparent' flag will come from the foreground surface;
-//    a partially-occluded surface's transparency flag can't be recovered from the framebuffer.
-MaterialSurface unpackFramebuffer(uvec4 foregroundSampleRGBA, uvec4 backgroundSampleRGBA)
-{
-    MaterialSurface ms;
-    uvec2 foregroundSample = foregroundSampleRGBA.xy;
-    uint backgroundSample = backgroundSampleRGBA.x;
+    uint packDensity(float value)
+    {
+        value *= float($(Int(DENSITY_PACKED_MAX)));
+        uint roundedValue = clamp(uint(value), uint(0), uint($(Int(DENSITY_PACKED_MAX))));
+        return (roundedValue & $(Int(DENSITY_BIT_MASK)));
+    }
+    float unpackDensity(uint sampleR)
+    {
+        return float(sampleR & $(Int(DENSITY_BIT_MASK))) /
+                float($(Int(DENSITY_PACKED_MAX)));
+    }
 
-    ms.foregroundShape = unpackShape(foregroundSample.x);
-    ms.foregroundColor = unpackColor(foregroundSample.x);
-    ms.foregroundDensity = unpackDensity(foregroundSample.y);
-    ms.isTransparent = ((foregroundSample.y >> $(Int(DENSITY_BITS))) == 0) ? false : true;
+    ////////////////////////////////////////////////////////
 
-    ms.backgroundColor = unpackColor(backgroundSample);
-    ms.backgroundDensity = unpackDensity(backgroundSample >> $(Int(COLOR_BITS)));
+    uvec2 packForeground(MaterialSurface surf)
+    {
+        return uvec2(
+            packShape(surf.foregroundShape) |
+                packColor(surf.foregroundColor),
+            packDensity(surf.foregroundDensity) |
+                ((surf.isTransparent ? 1 : 0) << $(Int(DENSITY_BITS)))
+        );
+    }
+    uint packBackground(MaterialSurface surf, bool isPartiallyOccluded)
+    {
+        uint color;
+        float density;
+        if (!isPartiallyOccluded || surf.isTransparent)
+        {
+            color = surf.backgroundColor;
+            density = surf.backgroundDensity;
+        }
+        else
+        {
+            color = surf.foregroundColor;
+            density = surf.foregroundDensity;
+        }
 
-    return ms;
-}
+        return packColor(color) | (packDensity(density) << $(Int(COLOR_BITS)));
+    }
+
+    //The 'IsTransparent' flag will come from the foreground surface;
+    //    a partially-occluded surface's transparency flag can't be recovered from the framebuffer.
+    MaterialSurface unpackFramebuffer(uvec4 foregroundSampleRGBA, uvec4 backgroundSampleRGBA)
+    {
+        MaterialSurface ms;
+        uvec2 foregroundSample = foregroundSampleRGBA.xy;
+        uint backgroundSample = backgroundSampleRGBA.x;
+
+        ms.foregroundShape = unpackShape(foregroundSample.x);
+        ms.foregroundColor = unpackColor(foregroundSample.x);
+        ms.foregroundDensity = unpackDensity(foregroundSample.y);
+        ms.isTransparent = ((foregroundSample.y >> $(Int(DENSITY_BITS))) == 0) ? false : true;
+
+        ms.backgroundColor = unpackColor(backgroundSample);
+        ms.backgroundDensity = unpackDensity(backgroundSample >> $(Int(COLOR_BITS)));
+
+        return ms;
+    }
+
+    #endif // FRAMEBUFFER_PACKING_H
 """
+
 
 "UBO data for outputting to the foreground or background of a framebuffer"
 GL.@std140 struct FrameBufferWriteData
@@ -159,6 +169,7 @@ const UBO_CODE_FRAMEBUFFER_WRITE_DATA = """
     }
 """
 
+
 "UBO data for reading from a framebuffer"
 GL.@std140 struct FrameBufferReadData
     tex_foreground::UInt64
@@ -188,3 +199,29 @@ const UBO_CODE_FRAMEBUFFER_READ_DATA = """
         outCharUV = fract(charGridCellF);
     }
 """
+
+
+"Helpers to write specific chars directly to the foreground"
+const SHADER_CODE_DIRECT_CHAR_OUTPUT = """
+    $SHADER_CODE_FRAMEBUFFER_PACKING
+    $UBO_CODE_CHAR_RENDERING
+
+    void writeChar_Letter(int letterIdx, bool uppercase,
+                        inout MaterialSurface surface)
+    {
+        surface.foregroundShape = uppercase ? SHAPE_DIRECT_uppercase : SHAPE_DIRECT_lowercase;
+        surface.foregroundDensity = calcDensityFloat(letterIdx, u_char_rendering.n_densities_per_shape[surface.foregroundShape]);
+    }
+    void writeChar_Digit(int digit, inout MaterialSurface surface)
+    {
+        surface.foregroundShape = SHAPE_DIRECT_digits;
+        surface.foregroundDensity = calcDensityFloat(digit, u_char_rendering.n_densities_per_shape[surface.foregroundShape]);
+    }
+    void writeChar_Punctuation(int index, inout MaterialSurface surface)
+    {
+        surface.foregroundShape = SHAPE_DIRECT_punctuation;
+        surface.foregroundDensity = calcDensityFloat(index, u_char_rendering.n_densities_per_shape[surface.foregroundShape]);
+    }
+    """
+"Gets the density index for the given punctuation character, assuming it exists"
+char_punctuation_idx(c::Char) = PUNCTUATION_DENSITY_INDICES[c]
