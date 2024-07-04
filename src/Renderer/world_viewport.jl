@@ -14,7 +14,9 @@ mutable struct WorldViewport
     ubo_read::Buffer
     ubo_write::Buffer
 
-    function WorldViewport(resolution::v2i)
+    segmentation::Optional{ViewportSegmentation}
+
+    function WorldViewport(resolution::v2i, segmentation::Optional{Vector{SegmentationLine}} = nothing)
         foreground = Texture(FOREGROUND_FORMAT, resolution)
         foreground_depth = Texture(DEPTH_FORMAT, resolution;
                                    sampler=GL.TexSampler{2}(
@@ -45,14 +47,15 @@ mutable struct WorldViewport
             resolution,
             ubo_read_data, ubo_write_data,
             GL.Buffer(false, ubo_read_data),
-            GL.Buffer(true, ubo_write_data)
+            GL.Buffer(true, ubo_write_data),
+            exists(segmentation) ? ViewportSegmentation(segmentation, 5.0f0) : nothing
         )
     end
 end
 function Base.close(wv::WorldViewport)
     for f in fieldnames(typeof(wv))
         v = getfield(wv, f)
-        if v isa AbstractResource
+        if (v isa AbstractResource) || (v isa ViewportSegmentation)
             close(v)
         end
     end
@@ -62,6 +65,8 @@ end
     output_mode::E_FramebufferRenderMode = FramebufferRenderMode.regular
     background_color::vRGBf = vRGBf(0, 0, 0)
     background_alpha::Float32 = 0
+    draw_segmentation::Bool = true # If segmentations don't exist for a viewport,
+                                   #   then this is meaningless.
 end
 
 
@@ -143,4 +148,12 @@ function post_process_framebuffer(viewport::WorldViewport,
     GL.view_deactivate(viewport.foreground)
     GL.view_deactivate(viewport.background)
     GL.view_deactivate.((assets.chars_atlas, assets.chars_atlas_lookup, assets.palette))
+
+    # Draw the segmentations.
+    if settings.draw_segmentation && exists(viewport.segmentation)
+        screen_pixels = size(GL.get_context().state.viewport)
+        char_pixels = screen_pixels ÷ viewport.resolution
+        draw_segmentation(assets.segmentation, viewport.segmentation,
+                          char_pixels, screen_pixels)
+    end
 end

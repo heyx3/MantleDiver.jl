@@ -35,6 +35,26 @@ mutable struct Mission
 
         cam_ubo = Buffer(true, CameraDataBuffer)
 
+        # Set up a segmentation rectangle.
+        segment_border = v2i(3, 3)
+        segment_lengths = v3i((player_view_resolution - 4)..., 0)
+        segment_min = segment_border - 1
+        segment_max = player_view_resolution + 1 - segment_border
+        segment_bounds = vappend(segment_min, segment_max)
+        segment_lines = [
+            # Outer border
+            SegmentationLine(v2i(0, 0), v2i(player_view_resolution.x, 0)),
+            SegmentationLine(v2i(player_view_resolution.x, 0), v2i(0, player_view_resolution.y)),
+            SegmentationLine(player_view_resolution, v2i(-player_view_resolution.x, 0)),
+            SegmentationLine(v2i(0, player_view_resolution.y), v2i(0, -player_view_resolution.y)),
+
+            # Inner border
+            SegmentationLine(segment_bounds.xy, segment_lengths.zy),
+            SegmentationLine(segment_bounds.xw, segment_lengths.xz),
+            SegmentationLine(segment_bounds.zw, -segment_lengths.zy),
+            SegmentationLine(segment_bounds.zy, -segment_lengths.xz)
+        ]
+
         return new(
             world, grid,
             loadout, player,
@@ -42,7 +62,8 @@ mutable struct Mission
                 ContinuousPosition,
                 WorldOrientation
             ))...,
-            WorldViewport(player_view_resolution), cam_ubo,
+            WorldViewport(player_view_resolution, segment_lines),
+            cam_ubo,
             Vector{Renderable}()
         )
     end

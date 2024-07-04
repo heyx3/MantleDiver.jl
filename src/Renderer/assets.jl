@@ -22,7 +22,7 @@ mutable struct Assets
     ft_lib::FT_Library
     chars_font::FT_Face
 
-    # Given a densit (X) and shape (Y), contains the min (RG) and max (BA) UV coordinates
+    # Given a density (X) and shape (Y), contains the min (RG) and max (BA) UV coordinates
     #    for the corresponding char in the font atlas.
     # Use point-clamp sampling (the texture's default).
     chars_atlas_lookup::Texture
@@ -35,12 +35,16 @@ mutable struct Assets
     palette::Texture
 
     shader_render_chars::Program
+    shader_render_segmentations_line::Program
+    shader_render_segmentations_corner::Program
 
     chars_ubo_data::CharRenderAssetBuffer
     chars_ubo::GL.Buffer
 
     # A tiny depth texture, cleared to max depth.
     blank_depth_tex::Texture
+
+    segmentation::SegmentationAssets
 end
 
 function Assets()
@@ -327,16 +331,20 @@ function Assets()
                   v2i(CHAR_PIXEL_SIZE, CHAR_PIXEL_SIZE),
                   palette_tex,
                   shader_render_chars,
+                  GL.bp_glsl_str(SHADER_RENDER_SEGMENTATION_LINES),
+                  GL.bp_glsl_str(SHADER_RENDER_SEGMENTATION_LINES),
                   chars_ubo_data,
                   chars_ubo,
                   GL.Texture(GL.DepthStencilFormats.depth_16u,
                              [ @f32(1) ;; ],
                              sampler = TexSampler{2}(
                                 pixel_filter = PixelFilters.rough
-                             )))
+                             )),
+                  SegmentationAssets())
 end
 
 function Base.close(a::Assets)
+    close(a.segmentation)
     close(a.chars_atlas_lookup)
     close(a.chars_atlas)
     close(a.palette)
