@@ -65,12 +65,12 @@ function player_start_moving(player::Entity,
     )
     return add_component(player, CabMovement, movement, direction)
 end
-function player_start_drilling(player::Entity,
+function player_start_drilling(cab::Cab,
                                direction::GridDirection,
                                fx_seed::Float32 = rand(Float32)
                               )::Optional{CabDrill}
-    grid = get_component(player.world, GridManager)[1]
-    grid_pos = get_voxel_position(player) + grid_vector(direction, Int32)
+    grid = get_component(cab.world, GridManager)[1]
+    grid_pos = cab.pos_component.get_voxel_position() + grid_vector(direction, Int32)
     grid_entity = entity_at!(grid, grid_pos)
     if isnothing(grid_entity)
         @error "Tried to drill empty space at $grid_pos. Drilling will not happen."
@@ -82,12 +82,12 @@ function player_start_drilling(player::Entity,
         @error "Grid element at $grid_pos doesn't exist or has no DrillResponse! Drilling will not happen."
         return nothing
     end
-    if !drill_response.can_be_drilled(grid_pos, player)
+    if !drill_response.can_be_drilled(grid_pos, cab.entity)
         return nothing
     end
-    drill_response.start_drilling(grid_pos, player)
+    drill_response.start_drilling(grid_pos, cab.entity)
 
-    return add_component(player, CabDrill, direction, fx_seed)
+    return add_component(cab.entity, CabDrill, direction, fx_seed, cab.loadout.braces_after_drilling)
 end
 
 function can_do_move_from(player_grid_idx::v3i,

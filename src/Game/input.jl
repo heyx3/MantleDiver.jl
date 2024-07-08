@@ -258,7 +258,7 @@ function update_mission_input_drill(cab::Cab, grid::GridManager,
         cab_forward = CabMovementDir(facing_dir, 1)
         if can_drill_from(cab.pos_component.get_voxel_position(), cab_forward, canonical_dir, grid)
             drill_dir = grid_dir(rotate_cab_movement(canonical_dir, cab_forward))
-            player_start_drilling(cab.entity, drill_dir)
+            player_start_drilling(cab, drill_dir)
             return true
         end
     end

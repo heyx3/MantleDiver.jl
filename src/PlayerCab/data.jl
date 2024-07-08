@@ -4,8 +4,8 @@ During a mission, it can get modified.
 
 Copy it with `Base.copy()`.
 "
-mutable struct PlayerLoadout
-
+Base.@kwdef mutable struct PlayerLoadout
+    braces_after_drilling::Bool = false
 end
 Base.copy(pl::PlayerLoadout) = PlayerLoadout((
     getfield(pl, f) for f in fieldnames(PlayerLoadout)

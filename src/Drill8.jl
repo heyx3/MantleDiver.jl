@@ -190,7 +190,7 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                         end
                         @check_gl_logs "After 'Game View' tab"
 
-                        gui_tab_item("Game View 2D") do
+                        gui_tab_item("Debug Game View") do
                             is_in_main_view = false
 
                             game_view_tab_region = get_imgui_current_drawable_region()
@@ -202,9 +202,16 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                             CImGui.Dummy(size(game_view_area)...)
                             gui_debug_game_views(game_view_area, mission, debug_gui)
 
-                            gui_debug_maneuvers(mission, debug_gui)
+                            GUI.gui_within_fold("Initial loadout") do
+                                # Don't allow this one to actually be edited.
+                                # Unfortunately we need a newer Dear ImGUI to actually disable the GUI.
+                                gui_debug_loadout(copy(mission.loadout), debug_gui)
+                            end
+                            GUI.gui_within_fold("Current loadout") do
+                                gui_debug_loadout(mission.player.loadout, debug_gui)
+                            end
                         end
-                        @check_gl_logs "After 'Game View 2D' tab"
+                        @check_gl_logs "After 'Debug Game View' tab"
 
                         gui_tab_item("Assets") do
                             is_in_main_view = false
@@ -246,7 +253,7 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                     elseif can_do_move_from(p_voxel, dir_flipR, MOVE_FORWARD, mission.grid)
                         player_start_moving(mission.player.entity, MOVE_FORWARD, dir_flipR)
                     elseif can_drill_from(p_voxel, dir_flipR, v3f(1, 0, 0), mission.grid)
-                        player_start_drilling(mission.player.entity, grid_dir(mission.player.rot_component.rot))
+                        player_start_drilling(mission.player, grid_dir(mission.player.rot_component.rot))
                     else
                         # If all else fails, turn in one direction.
                         next_rot = mission.player.rot_component.rot >>
