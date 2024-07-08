@@ -43,6 +43,7 @@ The following things can appear within the mining area:
 * Remnants of earlier mining pods and the paths they carved out, exposing a rich mineral vein
 * Unstable rock which collapses if you sit the pod on top of it
 * Hot areas with black smoke that cause gradual hull damage and obscure the physical view (but not other sensors)
+* A very slow-moving hostile creature that attacks your pod if adjacent to you
 
 As you go deeper, more interesting and dangerous things appear:
 
@@ -111,8 +112,11 @@ The pod's properties and upgrades are as follows:
 
 * **Shaped charges**: lay down some charges along consecutive spaces in the rock voxel grid, then detonate them all at once, vaporizing the rock and leaving only mineral
 * **Neutrino laser**: identify mineral sources through the rock, displaying as colored rocks behind other rocks.
-* **Jump jet**: launch straight upwards
+* **Jump jet**: launch straight upwards and lock your position as if you're on the ground
+* **Breadcrumbs**: drop waypoints on the grid space you're currently occupying to help you mark areas and orient yourself
 * Upgraded with the mineral "silbon"
+
+* **Deep Start**: spend a *lot* of any one mineral type to get yourself launched deeper into the map (effectively, pan the level generator downwards by N units) to get right to the richer areas.
 
 ## Sensors
 
@@ -120,15 +124,20 @@ The pod's properties and upgrades are as follows:
   * You can upgrade to greyscale for better detection of minerals
   * You can upgrade it to color for *really* good detection of minerals
 * You can quickly rotate the view of your vehicle in 90-degree increments.
-* You can add another view which senses and displays all surrounding rock.
-* You can upgrade the length, breadth, and intensity of your flashlight.
+* You can add another view which senses and displays all rock you've encountered in the level.
+* You can upgrade the length, breadth, and intensity of your flashlight (without which you only have environmental lighting to see with)
+* Hypersonic transducer, providing a noisy horizontal live-scanning of minerals
 * Upgraded with the mineral "gahp"
 
 ## Maneuverability
 
-* The basic pod can move forward/back, strafe, and drill in all 6 orthogonal directions
-* Upgraded maneuvere are as follows:
-    * Cross over single empty spaces, both straight ahead and around a corner
-    * Climb ledges
-    * General reduction in fall damage
+* The basic pod can move forward/back, strafe, and drill in all 6 orthogonal directions.
+  * Note that drilling upward normally causes you to immediately fall back down.
+* Some maneuvers can be "bracing", meaning the drill cab can hold itself in place as long as there's an adjacent rock to latch onto.
+* Upgrades you can make to maneuverability are:
+  * Cross over single empty spaces, both straight ahead and around a corner
+  * Climb ledges (of increasing heights with higher upgrades)
+  * Reduce fall damage
+  * Increase maneuver speed scale (not drilling speed; that's handled elsewhere)
+  * Always brace after drilling (a high-level, expensive upgrade that significantly changes late-game play)
 * Upgraded with the mineral "ourin"
