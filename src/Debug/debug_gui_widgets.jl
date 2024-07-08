@@ -174,7 +174,7 @@ function gui_debug_main_view(gui::DebugGui, mission::Mission, rendered_game::Tar
 
     # Draw an XYZ axis indicator as Dear ImGUI lines.
     BASIS_SCREEN_LENGTH = @f32(50)
-    player_rot_basis::Bplus.Math.VBasis = q_basis(mission.player_rot.rot)
+    player_rot_basis::Bplus.Math.VBasis = q_basis(mission.player.rot_component.rot)
     # Pitch the view down a little bit since the player's view is always orthogonal
     #    and this removes any depth clues in the axis render.
     player_rot_basis = Bplus.vbasis(vnorm(player_rot_basis.forward + v3f(0, 0, -0.2)),
@@ -265,7 +265,7 @@ function gui_debug_game_view(im_gui_draw_space::Box2Df, mission::Mission, horizo
 
     # Compute data for drawing the world grid along this slice.
     world_slice_space = Box2Df(
-        center = let center3D = mission.player_pos.get_precise_position()
+        center = let center3D = mission.player.pos_component.get_precise_position()
             Vec(center3D[horizontal_axis], center3D[3])
         end,
         size = let size3D = v3i(4, 4, 10)
@@ -274,7 +274,7 @@ function gui_debug_game_view(im_gui_draw_space::Box2Df, mission::Mission, horizo
     )
     gui_render_data = DebugGuiRenderData(
         horizontal_axis,
-        mission.player_pos.get_voxel_position()[other_x_axis],
+        mission.player.pos_component.get_voxel_position()[other_x_axis],
         im_gui_draw_space, world_slice_space,
         CImGui.GetWindowDrawList()
     )
@@ -321,7 +321,7 @@ const TURN_INCREMENT_DEG = @f32(30)
 
 function gui_debug_maneuvers(mission::Mission, gui::DebugGui)
     function maneuver_button(button_args...; force_disable::Bool = false)::Bool
-        disable_button = force_disable || player_is_busy(mission.player)
+        disable_button = force_disable || player_is_busy(mission.player.entity)
 
         disable_button && CImGui.PushStyleColor(CImGui.ImGuiCol_Button,
                                                 CImGui.ImVec4(0.65, 0.4, 0.4, 1))
@@ -336,16 +336,16 @@ function gui_debug_maneuvers(mission::Mission, gui::DebugGui)
         BUTTON_SIZE = (50, 25)
         if maneuver_button("<--", BUTTON_SIZE)
             turn = fquat(get_up_vector(), -deg2rad(TURN_INCREMENT_DEG))
-            new_orientation = get_orientation(mission.player) >> turn
-            player_start_turning(mission.player, new_orientation)
+            new_orientation = get_orientation(mission.player.entity) >> turn
+            player_start_turning(mission.player.entity, new_orientation)
         end
         CImGui.SameLine()
         CImGui.Dummy(BUTTON_SIZE[1] * 1.0, 1)
         CImGui.SameLine()
         if maneuver_button("-->", BUTTON_SIZE)
             turn = fquat(get_up_vector(), deg2rad(TURN_INCREMENT_DEG))
-            new_orientation = get_orientation(mission.player) >> turn
-            player_start_turning(mission.player, new_orientation)
+            new_orientation = get_orientation(mission.player.entity) >> turn
+            player_start_turning(mission.player.entity, new_orientation)
         end
     end
     # Draw a box around the 'turn' buttons' interface.
@@ -365,28 +365,27 @@ function gui_debug_maneuvers(mission::Mission, gui::DebugGui)
     gui.maneuver_next_move_flip = convert(Int8, lerp(-1, +1, next_move_flip_ui))
 
     # Provide buttons for all movements, with the current 'flip' direction.
-    current_grid_direction = grid_dir(get_orientation(mission.player))
+    current_grid_direction = grid_dir(get_orientation(mission.player.entity))
     current_move_dir = CabMovementDir(current_grid_direction, gui.maneuver_next_move_flip)
-    (MOVE_FORWARD, MOVE_CLIMB, MOVE_DROP) = LEGAL_MOVES
     (forward_is_legal, climb_is_legal, drop_is_legal) = is_legal.(
-        LEGAL_MOVES, Ref(current_move_dir),
-        Ref(mission.player_pos.get_voxel_position()),
+        (MOVE_FORWARD, MOVE_CLIMB_UP, MOVE_CLIMB_DOWN), Ref(current_move_dir),
+        Ref(mission.player.pos_component.get_voxel_position()),
         Ref(pos -> is_passable(mission.grid, pos))
     )
     if maneuver_button("x##Move"; force_disable=!forward_is_legal)
-        player_start_moving(mission.player, MOVE_FORWARD, current_move_dir)
+        player_start_moving(mission.player.entity, MOVE_FORWARD, current_move_dir)
     end
     CImGui.SameLine()
     CImGui.Dummy(10, 0)
     CImGui.SameLine()
     if maneuver_button("^^##Move"; force_disable=!climb_is_legal)
-        player_start_moving(mission.player, MOVE_CLIMB, current_move_dir)
+        player_start_moving(mission.player.entity, MOVE_CLIMB_UP, current_move_dir)
     end
     CImGui.SameLine()
     CImGui.Dummy(10, 0)
     CImGui.SameLine()
     if maneuver_button("V##Move"; force_disable=!drop_is_legal)
-        player_start_moving(mission.player, MOVE_DROP, current_move_dir)
+        player_start_moving(mission.player.entity, MOVE_CLIMB_DOWN, current_move_dir)
     end
 
     CImGui.Dummy(0, 50)
@@ -395,23 +394,23 @@ function gui_debug_maneuvers(mission::Mission, gui::DebugGui)
     function is_drill_legal(canonical_dir::Vec3)
         world_dir::v3f = rotate_cab_movement(convert(v3f, canonical_dir),
                                                 current_move_dir)
-        drilled_pos = mission.player_pos.get_precise_position() + world_dir
+        drilled_pos = mission.player.pos_component.get_precise_position() + world_dir
         drilled_grid_pos = grid_idx(drilled_pos)
         return exists(component_at!(mission.grid, drilled_grid_pos, Rock))
     end
     CImGui.Text("DRILL"); CImGui.SameLine()
     CImGui.Dummy(10, 0); CImGui.SameLine()
     if maneuver_button("*##Drill"; force_disable=!is_drill_legal(v3f(1, 0, 0)))
-        player_start_drilling(mission.player, current_grid_direction)
+        player_start_drilling(mission.player.entity, current_grid_direction)
     end
     CImGui.SameLine()
     if maneuver_button("V##Drill"; force_disable=!is_drill_legal(v3f(0, 0, -1)))
-        player_start_drilling(mission.player, grid_dir(-get_up_vector()))
+        player_start_drilling(mission.player.entity, grid_dir(-get_up_vector()))
     end
     CImGui.SameLine()
     if maneuver_button(">>##Drill6"; force_disable=!is_drill_legal(v3i(0, 1, 0)))
         drill_dir = grid_dir(rotate_cab_movement(v3i(0, 1, 0), current_move_dir))
-        player_start_drilling(mission.player, drill_dir)
+        player_start_drilling(mission.player.entity, drill_dir)
     end
 end
 

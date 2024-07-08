@@ -35,9 +35,10 @@ include("Components/Core/grid_element.jl")
 include("Components/Core/debug_gui_visuals.jl")
 include("Components/Core/renderable.jl")
 include("Components/GridObjects/rock.jl")
-include("Components/PlayerCab/data.jl")
-include("Components/PlayerCab/maneuvers.jl")
-include("Components/PlayerCab/rendering.jl")
+
+include("PlayerCab/data.jl")
+include("PlayerCab/maneuvers.jl")
+include("PlayerCab/rendering.jl")
 
 include("Game/entity_prototypes.jl")
 include("Game/level_generators.jl")
@@ -233,24 +234,24 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                 end
 
                 # If not maneuvering, maneuver.
-                if !player_is_busy(mission.player)
-                    p_dir = grid_dir(mission.player_rot.rot)
-                    p_voxel = mission.player_pos.get_voxel_position()
+                if !player_is_busy(mission.player.entity)
+                    p_dir = grid_dir(mission.player.rot_component.rot)
+                    p_voxel = mission.player.pos_component.get_voxel_position()
                     dir_flipR = CabMovementDir(p_dir, 1)
                     dir_flipL = CabMovementDir(p_dir, -1)
-                    if can_do_move_from(p_voxel, dir_flipR, LEGAL_MOVES[2], mission.grid)
-                        player_start_moving(mission.player, LEGAL_MOVES[2], dir_flipR)
-                    elseif can_do_move_from(p_voxel, dir_flipR, LEGAL_MOVES[3], mission.grid)
-                        player_start_moving(mission.player, LEGAL_MOVES[3], dir_flipR)
-                    elseif can_do_move_from(p_voxel, dir_flipR, LEGAL_MOVES[1], mission.grid)
-                        player_start_moving(mission.player, LEGAL_MOVES[1], dir_flipR)
+                    if can_do_move_from(p_voxel, dir_flipR, MOVE_CLIMB_UP, mission.grid)
+                        player_start_moving(mission.player.entity, MOVE_CLIMB_UP, dir_flipR)
+                    elseif can_do_move_from(p_voxel, dir_flipR, MOVE_CLIMB_DOWN, mission.grid)
+                        player_start_moving(mission.player.entity, MOVE_CLIMB_DOWN, dir_flipR)
+                    elseif can_do_move_from(p_voxel, dir_flipR, MOVE_FORWARD, mission.grid)
+                        player_start_moving(mission.player.entity, MOVE_FORWARD, dir_flipR)
                     elseif can_drill_from(p_voxel, dir_flipR, v3f(1, 0, 0), mission.grid)
-                        player_start_drilling(mission.player, grid_dir(mission.player_rot.rot))
+                        player_start_drilling(mission.player.entity, grid_dir(mission.player.rot_component.rot))
                     else
                         # If all else fails, turn in one direction.
-                        next_rot = get_orientation(mission.player) >>
+                        next_rot = mission.player.rot_component.rot >>
                                      Bplus.fquat(WORLD_UP, deg2rad(30))
-                        player_start_turning(mission.player, next_rot)
+                        player_start_turning(mission.player.entity, next_rot)
                     end
                 end
             end

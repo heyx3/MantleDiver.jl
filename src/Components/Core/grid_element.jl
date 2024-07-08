@@ -48,6 +48,7 @@
     end
 end
 
+"Gets whether the given location could be passed through by a physical entity"
 function is_passable(gm::GridManager, world_grid_pos::Vec3)::Bool
     entity = entity_at!(gm, world_grid_pos)
     if entity isa Entity
@@ -60,4 +61,11 @@ function is_passable(gm::GridManager, world_grid_pos::Vec3)::Bool
     else
         error("Unknown type: ", typeof(entity))
     end
+end
+"
+Gets whether the given location is filled with a solid object
+  that the player cab can brace against to prevent falling
+"
+function is_braceable(gm::GridManager, world_grid_pos::Vec3)::Bool
+    return !is_passable(gm, world_grid_pos)
 end

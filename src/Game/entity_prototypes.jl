@@ -16,11 +16,12 @@ end
 
 ##   Player   ##
 
-function make_player(world::World, pos::Vec3)::Entity
+function make_player(world::World, pos::Vec3, cab_args...)::Entity
     entity = add_entity(world)
 
     pos_component = add_component(entity, ContinuousPosition, convert(v3f, pos))
     orientation_component = add_component(entity, WorldOrientation)
+    cab_component = add_component(entity, Cab, cab_args...)
     debug_visuals = add_component(entity, DebugGuiVisuals_DrillPod,
         vRGBAf(0.2, 1, 0.5, 1),
         @f32(10),

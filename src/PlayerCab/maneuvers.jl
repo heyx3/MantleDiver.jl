@@ -1,9 +1,10 @@
 ##   Abstract component   ##
 
 # "Some kind of animated motion. Only one maneuver can run at a time."
-@component Maneuver {abstract} {entitySingleton} {require: ContinuousPosition} begin
+@component Maneuver {abstract} {entitySingleton} {require: Cab, ContinuousPosition} begin
     pos_component::ContinuousPosition
     shake_component::CosmeticOffset
+    cab::Cab
 
     duration::Float32
     progress_normalized::Float32
@@ -13,11 +14,15 @@
         this.duration = convert(Float32, duration_seconds)
         this.pos_component = get_component(entity, ContinuousPosition)
         this.shake_component = add_component(entity, CosmeticOffset)
+        this.cab = get_component(entity, Cab)
     end
     function DESTRUCT(is_entity_dying::Bool)
         if !is_entity_dying
             remove_component(entity, this.shake_component)
-            check_for_fall(this.pos_component)
+
+            @d8_assert(get_component(entity, Cab) == this.cab,
+                       "Cab component is gone?")
+            check_for_fall(this.cab)
         end
     end
 
@@ -61,8 +66,8 @@ const TURN_SPEED_DEG_PER_SECOND = 180
 
 # "Manages a cab's turning motion"
 @component CabTurn <: Maneuver {require: WorldOrientation} begin
-    rot_component::WorldOrientation
     target::fquat
+    rot_component::WorldOrientation
 
     CONSTRUCT(target) = begin
         this.rot_component = get_component(entity, WorldOrientation)
@@ -114,7 +119,7 @@ end
     end
 
     function TICK()
-        cab_move_forward(this, entity, world, world.delta_seconds)
+        cab_tick_impl(this, entity, world, world.delta_seconds)
     end
     finish_maneuver() = begin
         this.pos_component.pos = +(
@@ -122,13 +127,14 @@ end
             rotate_cab_movement(this.src.keyframes[end].delta_pos,
                                 this.heading)
         )
+        this.cab.is_bracing = this.src.braces_at_end
     end
 
     shake_strengths() = this.computed_shake_strengths
 end
 
-function cab_move_forward(this::CabMovement, entity::Entity, world::World,
-                          delta_seconds::Float32)
+function cab_tick_impl(this::CabMovement, entity::Entity, world::World,
+                       delta_seconds::Float32)
     # Get the previous animation key, or a stand-in if we're at the first key.
     local prev_key::CabMovementKeyframe
     if this.key_idx == 1
@@ -148,13 +154,12 @@ function cab_move_forward(this::CabMovement, entity::Entity, world::World,
     #    and make a recursive call to process the next one.
     time_to_next_keyframe = (next_key.t - this.progress_normalized) * this.duration
     passes_keyframe::Bool = time_to_next_keyframe <= delta_seconds
-    capped_delta_seconds = passes_keyframe ? time_to_next_keyframe : delta_seconds
 
     # Update the position, or move on to the next keyframe if time is left.
     if passes_keyframe
         if this.key_idx < length(this.src.keyframes)
             this.key_idx += 1
-            cab_move_forward(this, entity, world, delta_seconds - time_to_next_keyframe)
+            cab_tick_impl(this, entity, world, delta_seconds - time_to_next_keyframe)
         else
             # Already handled by this.finish_maneuver()
         end
@@ -182,14 +187,17 @@ end
     rng_seed::Float32
 
     finished_drilling::Bool # So that we know on DESTRUCT whether drilling succeeded
+    braces_at_end::Bool # Whether the player can hold themselves in the air at the end of the movement.
+                        # If false, and they end on empty space, they'll fall down.
 
-    function CONSTRUCT(dir::GridDirection, rng_seed::Float32)
+    function CONSTRUCT(dir::GridDirection, rng_seed::Float32, braces_at_end::Bool = false)
         SUPER(DRILL_DURATION_SECONDS)
         this.original_pos = this.pos_component.pos
         this.drilling_pos = grid_idx(this.original_pos) + grid_vector(dir, Int32)
         this.dir = dir
         this.rng_seed = rng_seed
         this.finished_drilling = false
+        this.braces_at_end = braces_at_end
     end
 
     function TICK()
@@ -220,6 +228,7 @@ end
     function finish_maneuver()
         this.pos_component.pos = world_pos_from_grid_idx(this.drilling_pos)
         this.finished_drilling = true
+        this.cab.is_bracing = this.braces_at_end
 
         # Tell the drilled object that we finished.
         grid = get_component(world, GridManager)[1]
@@ -265,8 +274,9 @@ const FALL_SHAKE_CURVE = @f32(2.0)
     speed::Float32
 
     function CONSTRUCT()
-        this.speed = 0
         SUPER(9999999) # Keep falling until we manually detect the ground is hit.
+        this.speed = 0
+        this.cab.is_bracing = false # Usually already true, but who knows
     end
 
     finish_maneuver() = nothing
@@ -298,31 +308,44 @@ const FALL_SHAKE_CURVE = @f32(2.0)
                 return nothing
             end
         end
-        # No collisions; complete the fall.
+        # No collisions; complete the fall for this frame.
         this.pos_component.pos = next_pos
-
-        # Accelerate.
         this.speed += GRAVITY_ACCEL * world.delta_seconds
     end
 end
 
+"Checks whether the player could brace from falling at the given empty voxel"
+function can_brace_from(pos::Vec3, world_grid::GridManager)::Bool
+    # Don't actually check that 'pos' is an empty space;
+    #    we might want to check hypotheticals
+    pos_i = grid_idx(pos)
+    brace_candidates = (
+        pos_i + v3i(1, 0, 0),
+        pos_i + v3i(-1, 0, 0),
+        pos_i + v3i(0, 1, 0),
+        pos_i + v3i(0, -1, 0)
+    )
+    n_braceable::Int = count(is_braceable.(Ref(world_grid), brace_candidates))
+    return n_braceable > 0
+end
+
 "
-Makes the given cab start falling if it's not on top of something.
+Makes the given cab start falling if it's not bracing or on top of something.
 Returns whether this happened.
 Assumes the cab isn't in the middle of a maneuver already.
-
-You should provide the cab as its position component, but if you don't have that,
-    you can provide it as its Entity instead.
 
 You should provide the grid manager if you have it, for efficiency;
     otherwise it will be found from the cab entity's World.
 "
-function check_for_fall(cab::Union{Entity, ContinuousPosition},
+function check_for_fall(cab::Cab,
                         world_grid::GridManager = get_component(cab.world, GridManager)[1]::GridManager
                        )::Bool
-    if cab isa Entity
-        return check_for_fall(get_component(cab, ContinuousPosition), world_grid)
-    elseif is_passable(world_grid, cab.get_voxel_position() - v3i(0, 0, 1))
+    cab_pos::v3f = cab.pos_component.pos
+    cab_grid_idx::v3i = grid_idx(cab_pos)
+
+    if cab.is_bracing && can_brace_from(cab_grid_idx, world_grid)
+        return true
+    elseif is_passable(world_grid, cab_grid_idx - v3i(0, 0, 1))
         @d8_assert(isnothing(get_component(cab.entity, Maneuver)),
                    "Cab is already in a maneuver and can't start falling: ", cab.entity)
         add_component(cab.entity, CabFall)

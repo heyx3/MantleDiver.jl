@@ -4,9 +4,7 @@ mutable struct Mission
     grid::GridManager
 
     loadout::PlayerLoadout
-    player::Entity
-    player_pos::ContinuousPosition
-    player_rot::WorldOrientation
+    player::Cab #TODO: .player
     player_viewport::WorldViewport
     player_camera_ubo::GL.Buffer
 
@@ -30,8 +28,9 @@ mutable struct Mission
             get_component(entity, GridManager)
         end
 
-        player = make_player(world, PLAYER_START_POS)
-        check_for_fall(player, grid)
+        player = make_player(world, PLAYER_START_POS, loadout)
+        cab = get_component(player, Cab)
+        check_for_fall(cab, grid)
 
         cam_ubo = Buffer(true, CameraDataBuffer)
 
@@ -57,11 +56,7 @@ mutable struct Mission
 
         return new(
             world, grid,
-            loadout, player,
-            get_component.(Ref(player), (
-                ContinuousPosition,
-                WorldOrientation
-            ))...,
+            loadout, cab,
             WorldViewport(player_view_resolution, segment_lines),
             cam_ubo,
             Vector{Renderable}()
@@ -80,7 +75,7 @@ function tick!(mission::Mission, delta_seconds::Float32)::Bool
     ECS.tick_world(mission.ecs, delta_seconds)
 
     # Make sure chunks near the player are all generated.
-    player_voxel_pos = get_voxel_position(mission.player)
+    player_voxel_pos = mission.player.pos_component.get_voxel_position()
     for corner in -1:one(v3i)
         chunk_at!(mission.grid, player_voxel_pos + (corner * CHUNK_SIZE))
     end
@@ -106,10 +101,12 @@ function render_mission(mission::Mission, assets::Assets, settings::ViewportDraw
 
     # Set up the player camera data buffer.
     #TODO: Re-use a CameaDataBuffer instance so we're not constantly allocating it.
+    p_pos = get_cosmetic_pos(mission.player.entity)
+    p_rot = get_cosmetic_rot(mission.player.entity)
     GL.set_buffer_data(mission.player_camera_ubo, CameraDataBuffer(Bplus.Cam3D{Float32}(
-        pos = mission.player_pos.pos,
-        forward = q_apply(mission.player_rot.rot, WORLD_FORWARD),
-        up = q_apply(mission.player_rot.rot, WORLD_UP),
+        pos = p_pos,
+        forward = q_apply(p_rot, WORLD_FORWARD),
+        up = q_apply(p_rot, WORLD_UP),
         projection = Bplus.PerspectiveProjection{Float32}(
             clip_range = IntervalF(min=0.05, max=1000),
             vertical_fov_degrees = 90,

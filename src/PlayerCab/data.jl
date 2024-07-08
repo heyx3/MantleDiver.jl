@@ -1,12 +1,44 @@
-"All the choices/purchases the player has made"
-struct PlayerLoadout
+"
+The player's available cab features, based on what choices/purchases they made.
+During a mission, it can get modified.
 
+Copy it with `Base.copy()`.
+"
+mutable struct PlayerLoadout
+
+end
+Base.copy(pl::PlayerLoadout) = PlayerLoadout((
+    getfield(pl, f) for f in fieldnames(PlayerLoadout)
+)...)
+
+#######################
+#  Cab state
+
+ECS.@component Cab {entitySingleton} {require: ContinuousPosition, WorldOrientation} begin
+    # If true, this cab is bracing itself to prevent falling when there is no floor underneath it.
+    is_bracing::Bool
+    loadout::PlayerLoadout
+    pos_component::ContinuousPosition
+    rot_component::WorldOrientation
+
+    function CONSTRUCT(initial_loadout::PlayerLoadout)
+        this.is_bracing = false
+        this.loadout = copy(initial_loadout)
+        this.pos_component = get_component(entity, ContinuousPosition)
+        this.rot_component = get_component(entity, WorldOrientation)
+    end
+    function DESTRUCT(is_entity_dying::Bool)
+        if !is_entity_dying
+            @warn "Cab component is being destroyed early for some reason"
+        end
+    end
 end
 
 
 #######################
 #  Shake
 
+"A transform offset due to shaking FX. Angles are in radians."
 struct CabShakeState
     pos::v3f
     pitch::Float32
@@ -67,95 +99,8 @@ struct CabMovementData
     solid_surfaces::Vector{v3i} # Grid cells (relative to the player) that must be solid
                                 #    for the move to be legal.
                                 # Cells outside the level bounds are considered solid.
-end
-const LEGAL_MOVES = (let CMKf = CabMovementKeyframe,
-                         SV = Vec{N_SHAKE_MODES, Float32}
-    [
-        # Move forward on treads.
-        CabMovementData(
-            2.0,
-            [
-                CMKf(v3f(0, 0, 0), 0.02,
-                     SV(1, 0)),
-
-                CMKf(v3f(0.5, 0, 0), 0.65,
-                     SV(0.8, 0.2)),
-
-                CMKf(v3f(1, 0, 0), 0.98,
-                     SV(1, 0)),
-                CMKf(v3f(1, 0, 0), 1.0,
-                     SV(0, 0))
-            ],
-            [
-                v3i(0, 0, -1),
-                v3i(1, 0, -1)
-            ]
-        ),
-
-        # Climb up over a corner.
-        CabMovementData(
-            2.0,
-            [
-                CMKf(v3f(0, 0, 0), 0.02,
-                     SV(1, 0)),
-                CMKf(v3f(0.35, 0, 0), 0.3,
-                     SV(1, 0)),
-
-                CMKf(v3f(0.35, 0, 0.4), 0.49,
-                     SV(0, 0)),
-                CMKf(v3f(0.35, 0, 0.4), 0.5,
-                     SV(0, 1)),
-
-                CMKf(v3f(0.65, 0, 0.75), 0.85,
-                     SV(0, 1)),
-
-                CMKf(v3f(1, 0, 1), 1.0,
-                     SV(0, 0))
-            ],
-            [
-                v3i(0, 0, -1),
-                v3i(1, 0, 0)
-            ]
-        ),
-
-        # Climb down across a corner.
-        CabMovementData(
-            2.0,
-            [
-                CMKf(v3f(0, 0, 0), 0.02,
-                     SV(1, 0)),
-                CMKf(v3f(0.35, 0, 0), 0.2,
-                     SV(1, 0)),
-
-                CMKf(v3f(0.5, 0, 0), 0.6,
-                     SV(0, 0)),
-
-                CMKf(v3f(0.5, 0, 0), 0.61,
-                     SV(1, 1)),
-                CMKf(v3f(0.6, 0, -1), 0.7,
-                     SV(2, 0.5)),
-
-                CMKf(v3f(1, 0, -1), 0.98,
-                     SV(0.8, 0.1)),
-                CMKf(v3f(1, 0, -1), 1.0,
-                     SV(0, 0))
-            ],
-            [
-                v3i(0, 0, -1),
-                v3i(1, 0, -2)
-            ]
-        )
-    ]
-end)
-# Check that the movement keyframes are well-ordered.
-for (move_idx, move) in enumerate(LEGAL_MOVES)
-    for key_idx in 2:length(move.keyframes)
-        prev_key = move.keyframes[key_idx - 1]
-        next_key = move.keyframes[key_idx]
-        @bp_check(prev_key.t < next_key.t,
-                  "Invalid animation keyframes! In move ", move_idx,
-                    ", keyframe ", key_idx-1, " does not come before keyframe ", key_idx)
-    end
+    braces_at_end::Bool # Whether the player can hold themselves in the air at the end of the movement.
+                        # If false, and they end on empty space, they'll fall down.
 end
 
 
@@ -192,7 +137,7 @@ function rotate_cab_movement(v::Vec3, dir::CabMovementDir)::typeof(v)
         if axis == 2
             sign * v.x
         else
-            dir.flip * sign * v.y
+            dir.flip * -sign * v.y
         end,
         v[3]
     )
