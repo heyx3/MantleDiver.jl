@@ -80,8 +80,11 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
             end
 
             mission = Mission(
-                PlayerLoadout(
-                ),
+                if auto_mode || @d8_debug()
+                    maxed_loadout()
+                else
+                    PlayerLoadout()
+                end,
                 v2i(50, 50)
             )
             @d8_debug(@check_gl_logs "After mission creation")

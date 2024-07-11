@@ -319,6 +319,8 @@ end
 
 function gui_debug_loadout(loadout::PlayerLoadout, gui::DebugGui)
     @c CImGui.Checkbox("Braces after drilling", &loadout.braces_after_drilling)
+    @c CImGui.Checkbox("Has Climbing maneuvers", &loadout.can_climb)
+    @c CImGui.Checkbox("Has Gapping maneuvers", &loadout.can_cross_gaps)
 end
 
 
