@@ -198,6 +198,11 @@ end
         this.rng_seed = rng_seed
         this.finished_drilling = false
         this.braces_at_end = braces_at_end
+
+        # Play a drilling noise.
+        services::Services = get_component(world, Services)[1]
+        play_sound(services.audio,
+                   services.audio_files.drill)
     end
 
     function TICK()
@@ -303,6 +308,10 @@ const FALL_SHAKE_CURVE = @f32(2.0)
                 # Collision! Complete the fall.
                 this.pos_component.pos = grid_idx(passthrough_grid_pos)
                 remove_component(entity, this)
+                # Play noise.
+                services::Services = get_component(world, Services)[1]
+                play_sound(services.audio,
+                           services.audio_files.hit_ground)
                 #TODO: Provide fall damage to the entity underneath the cab.
                 #TODO: Provide fall damage to the cab.
                 return nothing

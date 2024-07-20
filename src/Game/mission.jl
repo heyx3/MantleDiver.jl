@@ -2,16 +2,20 @@
 mutable struct Mission
     ecs::ECS.World
     grid::GridManager
+    ecs_services::Services
 
     loadout::PlayerLoadout
-    player::Cab #TODO: .player
+    player::Cab
     player_viewport::WorldViewport
     player_camera_ubo::GL.Buffer
 
     buffer_renderables::Vector{Renderable}
 
     function Mission(loadout::PlayerLoadout,
-                     player_view_resolution::v2i
+                     player_view_resolution::v2i,
+                     audio::AudioManager,
+                     audio_files::AudioFiles,
+                     assets::Assets
                      ;
                      seed::UInt = @d8_debug(0x123345678911, rand(UInt)))
         PLAYER_START_POS = v3i(0, 0, 0)
@@ -26,6 +30,10 @@ mutable struct Mission
                                       5, 0.39,
                                       3, 0.28, 2.4)
             get_component(entity, GridManager)
+        end
+        services = let entity = add_entity(world)
+            add_component(entity, Services,
+                          audio, audio_files, assets)
         end
 
         player = make_player(world, PLAYER_START_POS, loadout)
@@ -55,7 +63,7 @@ mutable struct Mission
         ]
 
         return new(
-            world, grid,
+            world, grid, services,
             loadout, cab,
             WorldViewport(player_view_resolution, segment_lines),
             cam_ubo,

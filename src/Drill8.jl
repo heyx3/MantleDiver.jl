@@ -1,5 +1,7 @@
 module Drill8
 
+IS_PRECOMPILING::Bool = true # Set to false at the bottom of this module
+
 using Random, Setfield
 
 using CImGui, GLFW, FreeType, ImageIO, FileIO,
@@ -26,6 +28,9 @@ include("Renderer/framebuffer.jl")
 include("Renderer/assets.jl")
 include("Renderer/world_viewport.jl")
 
+include("Audio/audio.jl")
+
+include("Components/Core/services.jl")
 include("Components/Core/transforms.jl")
 include("Components/Core/grid_data.jl")
 include("Components/Core/grid_event_responders.jl")
@@ -72,26 +77,46 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
         )
 
         SETUP = begin
-            # Check the path we're running from.
+            # Make sure we're running from the project folder (or equivalent built executable folder).
             if !isdir(ASSETS_FOLDER)
                 error("Running from a location with no 'assets' folder! ",
                         "This is not the right place to run from. ",
                         pwd())
             end
 
+            # Single-threaded runtimes will experience audio problems.
+            # When compiling this module we run an auto-play instance of the game,
+            #    and it's apparently always single-threaded.
+            if !IS_PRECOMPILING && (Threads.nthreads() < 2)
+                @warn string(
+                    "Running Julia single-threaded; this usually causes audio problems. ",
+                    "Try running with '-t auto' or at least '-t 2'."
+                )
+            end
+
+            # Set up audio.
+            audio_files = AudioFiles()
+            audio_manager = AudioManager{2, Float32}(SampledSignals.samplerate(audio_files.drill.buffers))
+            if IS_PRECOMPILING
+                audio_manager.disable_new_sounds = true
+            end
+
+            # Set up graphics assets.
+            assets = Assets()
+            @d8_debug(@check_gl_logs "After asset creation")
+
+            # Start a mission.
             mission = Mission(
                 if auto_mode || @d8_debug()
                     maxed_loadout()
                 else
                     PlayerLoadout()
                 end,
-                v2i(50, 50)
+                v2i(50, 50),
+                audio_manager, audio_files, assets
             )
             @d8_debug(@check_gl_logs "After mission creation")
             register_mission_inputs()
-
-            assets = Assets()
-            @d8_debug(@check_gl_logs "After asset creation")
 
             # In debug builds provide various GUI widgets,
             #    one of which will contain the rendered scene.
@@ -265,10 +290,26 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                     end
                 end
             end
+
+            # Give some time to other threads (audio)
+            yield()
         end
 
         TEARDOWN = begin
             if auto_mode
+                # During precompilation, Julia is stuck single-threaded,
+                #    so let's do audio precompilation now that gameplay is all done.
+                if IS_PRECOMPILING
+                    println(stderr, "\tPrecompiling the audio engine...")
+                    audio_manager.disable_new_sounds = false
+
+                    play_sound(audio_manager, audio_files.drill)
+                    sleep(1) # Not the full duration of the sound
+                    play_sound(audio_manager, audio_files.hit_ground)
+                    play_sound(audio_manager, audio_files.ambiance_plain, 1.0f0, 3)
+                    sleep(5)
+                end
+
                 println(stderr, "\tCleaning up")
             end
             @d8_debug begin
@@ -277,6 +318,7 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
             end
             close(mission)
             close(assets)
+            close(audio_manager)
 
             if auto_mode
                 println(stderr, "Done!")
@@ -292,5 +334,7 @@ julia_main()::Cint = inner_main(nothing)
 # Precompile the game as much as possible when building this module,
 #    by running a session that plays itself automatically.
 inner_main(5000)
+
+IS_PRECOMPILING = false
 
 end # module
