@@ -18,18 +18,4 @@ This project will use the master branch of B+ and its sub-modules, which can inc
 
 ## License
 
-[Creative Commons Attribution 4.0](LICENSE)
-
-## Credit
-
-#### Debug play icon
-
-*play* by *fatimahazzahra* from [Noun Project](https://thenounproject.com/browse/icons/term/play/) (CC BY 3.0)
-
-#### Debug pause icon
-
-*pause* by *Muhammad Nur Auliady Pamungkas* from [Noun Project](https://thenounproject.com/browse/icons/term/pause/) (CC BY 3.0)
-
-#### Debug fast-forward icon
-
-*fast forward* by *ida bagus mahendra putra* from [Noun Project](https://thenounproject.com/browse/icons/term/fast-forward/) (CC BY 3.0)
+[See here](LICENSE).
