@@ -303,11 +303,12 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                     println(stderr, "\tPrecompiling the audio engine...")
                     audio_manager.disable_new_sounds = false
 
+                    play_loop(audio_manager, audio_files.ambiance_plain, audio_files.crossfade_seconds_ambiance_plain)
                     play_sound(audio_manager, audio_files.drill)
                     sleep(1) # Not the full duration of the sound
                     play_sound(audio_manager, audio_files.hit_ground)
                     play_sound(audio_manager, audio_files.ambiance_plain, 1.0f0, 3)
-                    sleep(5)
+                    sleep(4)
                 end
 
                 println(stderr, "\tCleaning up")

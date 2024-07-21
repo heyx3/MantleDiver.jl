@@ -86,13 +86,17 @@ mutable struct AudioFiles
     hit_ground::LoadedAudio
     ambiance_plain::LoadedAudio
     ambiance_special::LoadedAudio
+
+    crossfade_seconds_ambiance_plain::Float32
+    crossfade_seconds_ambiance_special::Float32
 end
 function AudioFiles(project_path::AbstractString = ".")
     return AudioFiles(
         LoadedAudio(AUDIO_DRILL, project_path),
         LoadedAudio(AUDIO_HIT_GROUND, project_path),
         LoadedAudio(AUDIO_AMBIANCES_PLAIN, project_path),
-        LoadedAudio(AUDIO_AMBIANCES_SPECIAL, project_path)
+        LoadedAudio(AUDIO_AMBIANCES_SPECIAL, project_path),
+        0.3, 0.3
     )
 end
 
@@ -139,6 +143,9 @@ end
 
 "A playing sound's progress from 0 (just started) to 1 (just finished)"
 playback_progress(p::PlayingSound)::Float64 = (p.current_sample_idx - 1) / size(p.sound, 1)::Int
+
+"A playing sound's remaning samples left before it's done"
+playback_samples_left(p::PlayingSound)::Int = (size(p.sound, 1)::Int - p.current_sample_idx + 1)
 
 "A playing sound's progress, in elapsed seconds"
 playback_seconds_elapsed(p::PlayingSound)::Float64 =
@@ -199,19 +206,120 @@ Assumes the sound buffer(s) use first axis for sample and second axis for channe
 "
 mutable struct PlayingLoop
     @atomic volume::Float32 # Can be modified from the game loop
+    @atomic should_stop::Bool # Set this to kill the loop
 
     sounds::Vector{SampleBuf}
     priority::Float32
 
-    seed::Int
+    seed::Int64
+    crossfade_samples::UInt32
 
-    current_buffer_idx::Int
-    current_sample_idx::Int
+    current_sound::PlayingSound
+    previous_sound::PlayingSound # sample index set to 0 if nonexistent
 
-    #PlayingLoop(audio::LoadedAudio, )
+    function PlayingLoop(audio::LoadedAudio,
+                         crossfade_seconds::Float64,
+                         seed = 0x12345678,
+                         ;
+                         volume_scale::Float32)
+        sounds = if audio.buffers isa Vector{SampleBuf}
+            audio.buffers
+        elseif audio.buffers isa SampleBuf
+            SampleBuf[ audio.buffers ]
+        else
+            error(typeof(audio.buffers))
+        end
+        if isempty(sounds)
+            error("The array of sounds is empty!")
+        end
+        sample_rate = SampledSignals.samplerate(sounds[1])
+
+        crossfade_samples = round(UInt32, crossfade_seconds * sample_rate)
+        if any(s -> size(s, 1) < crossfade_samples*2, sounds)
+            original_crossfade_samples = crossfade_samples
+            crossfade_samples = minimum((size(s, 1)÷2) for s in sounds)
+            @warn "Crossfade length is too long for these sounds; it's being shortened from $original_crossfade_samples to $crossfade_samples"
+        end
+
+        rng = Bplus.ConstPRNG(seed, 0xa12bc43d)
+        (out_seed, rng) = rand(rng, Int64)
+        (first_buffer_idx, rng) = rand(rng, 1:length(sounds))
+
+        current_sound = PlayingSound(LoadedAudio(sounds[first_buffer_idx], audio.source),
+                                     nothing)
+        previous_sound = PlayingSound(LoadedAudio(sounds[1], audio.source),
+                                      nothing,
+                                      first_buffer_idx=0)
+
+        return new(
+            volume_scale, false, sounds,
+            out_seed, crossfade_samples,
+            current_sound, previous_sound
+        )
+    end
 end
 
-#TODO: PlayingLoop, for continuously cross-fading between sounds
+"
+Writes a playing loop's next samples into the entire given buffer
+  (you probably want to pass a `@view` of the real buffer).
+Returns whether the loop is still playing.
+
+Assumes all sound buffers are 2D, first axis for samples and second axis for channels.
+"
+function advance_playback!(p::PlayingLoop, output_buf, volume_priority_scale::Float32)::Bool
+    if @atomic(p.should_stop)
+        return false
+    end
+
+    n_desired_samples = size(output_buf, 1)
+    volume_priority_scale *= @atomic(p.volume)
+
+    # Note that we already checked in the constructor that the individual sounds
+    #    are long enough to not overlap improperly when crossfading.
+
+    # Advance in stages, until we've exhausted the buffer:
+    #    1. To the end of the fading-out sound
+    #    2. To the start of the new fading-in sound
+    #    3. Go to 1
+
+    # Put the buffer in a type-stable view.
+    output_buf_view = @view(output_buf[:, :])
+
+    while true
+        # Play the fading-out sound.
+        if p.previous_sound.current_sample_idx > 0
+            still_fading_out::Bool = advance_playback!(p.previous_sound, output_buf_view, volume_priority_scale)
+
+            # If we're still fading out the previous sound, then
+            #    we certainly won't finish the current sound either.
+            if still_fading_out
+                still_playing_primary::Bool = advance_playback!(p.current_sound, output_buf_view, volume_priority_scale)
+                @d8_assert(still_playing_primary)
+                @d8_assert(playback_samples_left(p.current_sound) > p.crossfade_samples)
+                break
+            else
+                p.previous_sound.current_sample_idx = 0
+            end
+        end
+
+        # At this point the fading-out sound definitely doesn't exist (just played out, or never existed).
+        # Play the primary sound, but only up to the cross-fade point.
+        first_crossfading_sample::Int = size(p.current_sound.sound, 1)::Int - p.crossfade_samples + 1
+        if (p.current_sound.current_sample_idx + n_desired_samples - 1) >= first_crossfading_sample
+            #TODO: Play non-crossfading subset (IF ONE EXISTS), then set up crossfading
+        else
+            still_playing_primary = advance_playback!(p.current_sound, output_buf_view, volume_priority_scale)
+            @d8_assert(still_playing_primary)
+            break
+        end
+
+        # At this point we've handled all buffer outputs up until cross-fading starts again.
+        output_buf_view = @view(output_buf_view[first_crossfading_sample:end, :])
+        @d8_assert(p.previous_sound.current_sample_idx > 0)
+    end
+
+    return true
+end
 
 
 "
@@ -232,6 +340,8 @@ mutable struct AudioManager{NChannels, TSample} <: SampledSignals.SampleSource
     sounds_game_thread_locker::ReentrantLock # Used to prevent race conditions
                                              #   when accessing 'sounds_game_thread'.
     sounds_audio_thread::Vector{PlayingSound} # Internal buffer
+
+    #TODO: Loops equivalent, to the above sound arrays
 end
 
 # Life cycle:
@@ -343,4 +453,21 @@ function play_sound(manager::AudioManager{N, F},
             ))
         end
     end
+end
+function play_loop(manager::AudioManager{N, F},
+                   sounds::LoadedAudio,
+                   crossfade_seconds::F,
+                   volume_scale::F = one(F),
+                   seed = rand(Int)
+                  )::PlayingLoop where {N, F}
+    loop = PlayingLoop(
+        sounds, crossfade_seconds, seed,
+        volume_scale=volume_scale
+    )
+    if !manager.disable_new_sounds
+        lock(manager.loops_game_thread_locker) do
+            push!(manager.loops_game_thread, loop)
+        end
+    end
+    return loop
 end

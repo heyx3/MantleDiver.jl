@@ -9,6 +9,8 @@ mutable struct Mission
     player_viewport::WorldViewport
     player_camera_ubo::GL.Buffer
 
+    ambient_sound_loop::PlayingLoop
+
     buffer_renderables::Vector{Renderable}
 
     function Mission(loadout::PlayerLoadout,
@@ -62,11 +64,18 @@ mutable struct Mission
             SegmentationLine(segment_bounds.zy, -segment_lengths.xz)
         ]
 
+        ambient_sound_loop = play_loop(
+            audio_manager,
+            audio_files.ambiance_plain,
+            audio_files.crossfade_seconds_ambiance_plain
+        )
+
         return new(
             world, grid, services,
             loadout, cab,
             WorldViewport(player_view_resolution, segment_lines),
             cam_ubo,
+            ambient_sound_loop,
             Vector{Renderable}()
         )
     end
@@ -74,6 +83,7 @@ end
 
 function Base.close(mission::Mission)
     reset_world(mission.ecs) # To ensure components' resources are released
+    @atomic(mission.ambient_sound_loop.should_stop = true)
     close(mission.player_viewport)
     close(mission.player_camera_ubo)
 end
