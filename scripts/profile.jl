@@ -7,12 +7,11 @@ end
 # Load this project.
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
+@warn "MAY RUN THE GAME ONCE FOR PRECOMPILATION..."
 using Drill8
 
 # Set up the profiler.
 using Profile, ProfileCanvas
-@warn "RUNNING THE GAME ONCE FOR PRECOMPILATION..."
-Drill8.julia_main()
 @warn "RUNNING THE PROFILER ONCE FOR PRECOMPILATION..."
 @profview map(identity, (i*i for i in 1:1000))
 
