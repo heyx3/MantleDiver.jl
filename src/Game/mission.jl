@@ -65,7 +65,7 @@ mutable struct Mission
         ]
 
         ambient_sound_loop = play_loop(
-            audio_manager,
+            audio,
             audio_files.ambiance_plain,
             audio_files.crossfade_seconds_ambiance_plain
         )

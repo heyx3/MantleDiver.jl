@@ -96,7 +96,7 @@ function AudioFiles(project_path::AbstractString = ".")
         LoadedAudio(AUDIO_HIT_GROUND, project_path),
         LoadedAudio(AUDIO_AMBIANCES_PLAIN, project_path),
         LoadedAudio(AUDIO_AMBIANCES_SPECIAL, project_path),
-        0.3, 0.3
+        0.6, 0.6
     )
 end
 
@@ -211,7 +211,7 @@ mutable struct PlayingLoop
     sounds::Vector{SampleBuf}
     priority::Float32
 
-    seed::Int64
+    rng::Bplus.PRNG
     crossfade_samples::UInt32
 
     current_sound::PlayingSound
@@ -221,7 +221,7 @@ mutable struct PlayingLoop
                          crossfade_seconds::Float64,
                          seed = 0x12345678,
                          ;
-                         volume_scale::Float32)
+                         volume_scale::Float32 = one(Float32))
         sounds = if audio.buffers isa Vector{SampleBuf}
             audio.buffers
         elseif audio.buffers isa SampleBuf
@@ -241,19 +241,20 @@ mutable struct PlayingLoop
             @warn "Crossfade length is too long for these sounds; it's being shortened from $original_crossfade_samples to $crossfade_samples"
         end
 
-        rng = Bplus.ConstPRNG(seed, 0xa12bc43d)
-        (out_seed, rng) = rand(rng, Int64)
-        (first_buffer_idx, rng) = rand(rng, 1:length(sounds))
+        rng = Bplus.PRNG(seed, 0xa12bc43d)
+        out_seed = rand(rng, Int64)
+        first_buffer_idx = rand(rng, 1:length(sounds))
 
         current_sound = PlayingSound(LoadedAudio(sounds[first_buffer_idx], audio.source),
                                      nothing)
         previous_sound = PlayingSound(LoadedAudio(sounds[1], audio.source),
                                       nothing,
-                                      first_buffer_idx=0)
+                                      first_sample_idx=0)
 
         return new(
-            volume_scale, false, sounds,
-            out_seed, crossfade_samples,
+            volume_scale, false,
+            sounds, audio.source.priority,
+            rng, crossfade_samples,
             current_sound, previous_sound
         )
     end
@@ -303,10 +304,25 @@ function advance_playback!(p::PlayingLoop, output_buf, volume_priority_scale::Fl
         end
 
         # At this point the fading-out sound definitely doesn't exist (just played out, or never existed).
-        # Play the primary sound, but only up to the cross-fade point.
+        # Play the primary sound, but only up to the point where *it* starts cross-fading out.
         first_crossfading_sample::Int = size(p.current_sound.sound, 1)::Int - p.crossfade_samples + 1
-        if (p.current_sound.current_sample_idx + n_desired_samples - 1) >= first_crossfading_sample
-            #TODO: Play non-crossfading subset (IF ONE EXISTS), then set up crossfading
+        n_samples_before_crossfade::Int = first_crossfading_sample - p.current_sound.current_sample_idx
+        if n_samples_before_crossfade < n_desired_samples
+            # Play the non-crossfaded part of the sound, if any exists.
+            first_idx = first(axes(output_buf_view, 1))
+            output_buf_non_crossfading = @view(output_buf_view[first_idx : (first_idx + n_samples_before_crossfade - 1)])
+            if !isempty(output_buf_non_crossfading)
+                still_playing_primary = advance_playback!(p.current_sound, output_buf_non_crossfading, volume_priority_scale)
+                @d8_assert(still_playing_primary)
+            end
+
+            # Switch this sound to fade out, and the new one to fade in.
+            temp_sound = p.previous_sound
+            p.previous_sound = p.current_sound
+            p.current_sound = temp_sound
+
+            p.current_sound.current_sample_idx = 1
+            p.current_sound.sound = rand(p.rng, p.sounds)
         else
             still_playing_primary = advance_playback!(p.current_sound, output_buf_view, volume_priority_scale)
             @d8_assert(still_playing_primary)
@@ -314,6 +330,8 @@ function advance_playback!(p::PlayingLoop, output_buf, volume_priority_scale::Fl
         end
 
         # At this point we've handled all buffer outputs up until cross-fading starts again.
+        @d8_assert(first_crossfading_sample > first(axes(output_buf_view, 1)),
+                   "first_crossfading_sample is ", first_crossfading_sample)
         output_buf_view = @view(output_buf_view[first_crossfading_sample:end, :])
         @d8_assert(p.previous_sound.current_sample_idx > 0)
     end
@@ -323,7 +341,7 @@ end
 
 
 "
-An audio stream that blends multiple `PlayingSound`s together.
+An audio stream that blends multiple `PlayingSound`s and `PlayingLoop`s together.
 All sounds must have the same sampling rate as this manager,
     but do not need to have the same number of channels (output channel index is clamped to the input range).
 "
@@ -336,12 +354,16 @@ mutable struct AudioManager{NChannels, TSample} <: SampledSignals.SampleSource
     @atomic should_close::Bool # Set this to end the audio stream.
     @atomic is_closed::Bool # Gets set to true once the audio stream has effectively closed.
 
-    sounds_game_thread::Vector{PlayingSound} # Access should be wrapped in the below locker.
-    sounds_game_thread_locker::ReentrantLock # Used to prevent race conditions
-                                             #   when accessing 'sounds_game_thread'.
-    sounds_audio_thread::Vector{PlayingSound} # Internal buffer
+    # Access to these lists should be done with the corresponding locker.
+    sounds_main_list::Vector{PlayingSound}
+    loops_main_list::Vector{PlayingLoop}
+    sounds_main_list_locker::ReentrantLock
+    loops_main_list_locker::ReentrantLock
 
-    #TODO: Loops equivalent, to the above sound arrays
+    # The audio playback thread will temporarily pull sounds out of the master list
+    #    to manipulate them itself.
+    sounds_audio_thread::Vector{PlayingSound}
+    loops_audio_thread::Vector{PlayingLoop}
 end
 
 # Life cycle:
@@ -359,8 +381,9 @@ function AudioManager{NChannels, TSample}(sample_rate::Float64,
         stream, sample_rate, false,
         initial_volume,
         false, false,
-        Vector{PlayingSound}(), ReentrantLock(),
-        Vector{PlayingSound}()
+        Vector{PlayingSound}(), Vector{PlayingLoop}(),
+        ReentrantLock(), ReentrantLock(),
+        Vector{PlayingSound}(), Vector{PlayingLoop}()
     )
 
     @async write(stream, manager) # Starts the audio-reading callback
@@ -397,23 +420,29 @@ function SampledSignals.unsafe_read!(m::AudioManager{NChannels, TSample},
 
     volume = @atomic m.total_volume
 
-    # Move all sounds from the game thread to the audio thread.
+    # Move all sounds and loops from the game thread to the audio thread.
     # After this current frame has been written to the audio buffers,
     #    some of those sounds stop playing.
     # At the end of this frame, all sounds which are still playing are appended
     #    back into the game-thread buffer, on top of any new sounds from the game.
     #TODO: Locking in this audio thread is a bad idea; we need a lock-free technique. But that seems very complicated to implement...
     empty!(m.sounds_audio_thread)
-    lock(m.sounds_game_thread_locker) do
-        append!(m.sounds_audio_thread, m.sounds_game_thread)
-        empty!(m.sounds_game_thread)
+    empty!(m.loops_audio_thread)
+    lock(m.sounds_main_list_locker) do
+        append!(m.sounds_audio_thread, m.sounds_main_list)
+        empty!(m.sounds_main_list)
+    end
+    lock(m.loops_main_list_locker) do
+        append!(m.loops_audio_thread, m.loops_main_list)
+        empty!(m.loops_main_list)
     end
 
     # Scale each active sound by its priority.
     # Note that sounds which stop playing during this callback
     #    will cause subsequent samples to sound quieter;
     #    we may need a more dynamic way of scaling sounds by priority.
-    priority_scaling = let s = sum((s.priority for s in m.sounds_audio_thread), init=zero(Float32))
+    priority_scaling = let s = sum((s.priority for s in m.sounds_audio_thread), init=zero(Float32)) +
+                                sum((s.priority for s in m.loops_audio_thread), init=zero(Float32))
         if s <= 0
             one(Float32)
         else
@@ -430,11 +459,23 @@ function SampledSignals.unsafe_read!(m::AudioManager{NChannels, TSample},
             deleteat!(m.sounds_audio_thread, sound_idx)
         end
     end
+    # Write all the loops to the output buffer in the same way.
+    sound_idx = 1
+    while sound_idx <= length(m.loops_audio_thread)
+        if advance_playback!(m.loops_audio_thread[sound_idx], out_samples, volume / priority_scaling)
+            sound_idx += 1
+        else
+            deleteat!(m.loops_audio_thread, sound_idx)
+        end
+    end
 
     # Give the sounds back to the game thread, in a way that preserves
     #    any new sounds the game thread has added in the meantime.
-    lock(m.sounds_game_thread_locker) do
-        append!(m.sounds_game_thread, m.sounds_audio_thread)
+    lock(m.sounds_main_list_locker) do
+        append!(m.sounds_main_list, m.sounds_audio_thread)
+    end
+    lock(m.loops_main_list_locker) do
+        append!(m.loops_main_list, m.loops_audio_thread)
     end
 
     return output_count
@@ -446,13 +487,15 @@ function play_sound(manager::AudioManager{N, F},
                     buffer_idx::Optional{Int} = nothing
                    ) where {N, F}
     if !manager.disable_new_sounds
-        lock(manager.sounds_game_thread_locker) do
-            push!(manager.sounds_game_thread, PlayingSound(
+        lock(manager.sounds_main_list_locker) do
+            push!(manager.sounds_main_list, PlayingSound(
                 sound, buffer_idx,
                 volume_scale=volume_scale
             ))
         end
     end
+
+    return nothing
 end
 function play_loop(manager::AudioManager{N, F},
                    sounds::LoadedAudio,
@@ -461,12 +504,12 @@ function play_loop(manager::AudioManager{N, F},
                    seed = rand(Int)
                   )::PlayingLoop where {N, F}
     loop = PlayingLoop(
-        sounds, crossfade_seconds, seed,
+        sounds, convert(Float64, crossfade_seconds), seed,
         volume_scale=volume_scale
     )
     if !manager.disable_new_sounds
-        lock(manager.loops_game_thread_locker) do
-            push!(manager.loops_game_thread, loop)
+        lock(manager.loops_main_list_locker) do
+            push!(manager.loops_main_list, loop)
         end
     end
     return loop

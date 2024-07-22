@@ -308,7 +308,7 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                     sleep(1) # Not the full duration of the sound
                     play_sound(audio_manager, audio_files.hit_ground)
                     play_sound(audio_manager, audio_files.ambiance_plain, 1.0f0, 3)
-                    sleep(4)
+                    sleep(10)
                 end
 
                 println(stderr, "\tCleaning up")
