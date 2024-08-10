@@ -140,24 +140,60 @@ const SHADER_CALC_DENSITY_INDEX = """
 """
 calc_density_float(zero_based_idx, n_indices)::Float32 = saturate(Float32(zero_based_idx) / Float32(n_indices - 1))
 
+
+"An unpacked CPU representation of a framebuffer foreground pixel"
+struct CharForegroundValue
+    color::UInt8
+    shape::E_CharShapeType
+    density::Float32
+    is_transparent::Bool
+end
+"An unpacked CPU representation of a framebuffer background pixel"
+struct CharBackgroundValue
+    color::UInt8
+    density::Float32
+end
+
 "Gets the shape and density needed to represent the given character"
-function direct_char_surface_data(c::Char)::@NamedTuple{shape::E_CharShapeType, density::Float32}
+function CharForegroundValue(c::Char, color = one(UInt8), is_transparent::Bool = false)::CharForegroundValue
     if isletter(c)
         if isuppercase(c)
-            return (shape=CharShapeType.DIRECT_uppercase, density=calc_density_float(c - 'A', 26))
+            return CharForegroundValue(
+                convert(UInt8, color),
+                CharShapeType.DIRECT_uppercase,
+                calc_density_float(c - 'A', 26),
+                is_transparent
+            )
         else
-            return (shape=CharShapeType.DIRECT_lowercase, density=calc_density_float(c - 'a', 26))
+            return CharForegroundValue(
+                convert(UInt8, color),
+                CharShapeType.DIRECT_lowercase,
+                calc_density_float(c - 'a', 26),
+                is_transparent
+            )
         end
     elseif isdigit(c)
-        (shape=CharShapeType.DIRECT_digits, density=calc_density_float(c - '0', 10))
+        CharForegroundValue(
+            convert(UInt8, color),
+            CharShapeType.DIRECT_digits,
+            calc_density_float(c - '0', 10),
+            is_transparent
+        )
     elseif haskey(PUNCTUATION_DENSITY_INDICES, c)
-        (shape=CharShapeType.DIRECT_punctuation,
-         density=calc_density_float(PUNCTUATION_DENSITY_INDICES[c] - 1,
-                                    length(PUNCTUATION_DENSITY_INDICES)))
+        return CharForegroundValue(
+            convert(UInt8, color),
+            CharShapeType.DIRECT_punctuation,
+            calc_density_float(PUNCTUATION_DENSITY_INDICES[c] - 1,
+                               length(PUNCTUATION_DENSITY_INDICES)),
+            is_transparent
+        )
     else
         error("Unsupported char: '", c, "' (", Int(c), " / ", UInt(c), ")")
     end
 end
+
+#TODO: Packing functions for Char[Foreground|Background]Value
+
 
 "
 A fallback when an invalid character is rendered.
@@ -186,40 +222,45 @@ const UBO_INDEX_CHAR_RENDERING = 1
 
 const UBO_NAME_CHAR_RENDERING = "CharRenderAssetBuffer"
 const UBO_CODE_CHAR_RENDERING = """
-layout (std140, binding=$(UBO_INDEX_CHAR_RENDERING-1)) uniform $UBO_NAME_CHAR_RENDERING {
-    $(glsl_decl(CharRenderAssetBuffer))
-} u_char_rendering;
+    #ifndef UBO_CHAR_RENDERING_HEADER
+    #define UBO_CHAR_RENDERING_HEADER
 
-$SHADER_CALC_DENSITY_INDEX
+    layout (std140, binding=$(UBO_INDEX_CHAR_RENDERING-1)) uniform $UBO_NAME_CHAR_RENDERING {
+        $(glsl_decl(CharRenderAssetBuffer))
+    } u_char_rendering;
 
-//Gets the UV rectangle (min=XY, max=ZW)
-//    for a particular character in the texture atlas, given its shape and density.
-vec4 charAtlasMinMaxUV(uint shape, float density) {
-    shape = clamp(shape, uint(0), uint(u_char_rendering.n_shapes - 1));
-    density = clamp(density, 0.0, 1.0);
+    $SHADER_CALC_DENSITY_INDEX
 
-    uint densityU = calcDensityIndex(
-        density,
-        u_char_rendering.n_densities_per_shape[shape]
-    );
+    //Gets the UV rectangle (min=XY, max=ZW)
+    //    for a particular character in the texture atlas, given its shape and density.
+    vec4 charAtlasMinMaxUV(uint shape, float density) {
+        shape = clamp(shape, uint(0), uint(u_char_rendering.n_shapes - 1));
+        density = clamp(density, 0.0, 1.0);
 
-    return texelFetch(sampler2D(u_char_rendering.tex_uv_lookup), ivec2(densityU, shape), 0);
-}
+        uint densityU = calcDensityIndex(
+            density,
+            u_char_rendering.n_densities_per_shape[shape]
+        );
 
-//Gets the rendered greyscale font character, at the given UV,
-//    using the given shape and density values to select a char.
-float readChar(uint shape, float density, vec2 uv) {
-    vec4 uvRect = charAtlasMinMaxUV(shape, density);
-    return textureLod(sampler2D(u_char_rendering.tex_atlas),
-                      mix(uvRect.xy, uvRect.zw, uv),
-                      0.0).r;
-}
+        return texelFetch(sampler2D(u_char_rendering.tex_uv_lookup), ivec2(densityU, shape), 0);
+    }
 
-//Gets a paletted color value.
-vec3 readColor(uint color) {
-    return texelFetch(sampler2D(u_char_rendering.tex_palette),
-                      ivec2(clamp(color, uint(0), uint(u_char_rendering.n_colors - 1)),
-                            0),
-                      0).rgb;
-}
+    //Gets the rendered greyscale font character, at the given UV,
+    //    using the given shape and density values to select a char.
+    float readChar(uint shape, float density, vec2 uv) {
+        vec4 uvRect = charAtlasMinMaxUV(shape, density);
+        return textureLod(sampler2D(u_char_rendering.tex_atlas),
+                          mix(uvRect.xy, uvRect.zw, uv),
+                          0.0).r;
+    }
+
+    //Gets a paletted color value.
+    vec3 readColor(uint color) {
+        return texelFetch(sampler2D(u_char_rendering.tex_palette),
+                          ivec2(clamp(color, uint(0), uint(u_char_rendering.n_colors - 1)),
+                                0),
+                          0).rgb;
+    }
+
+    #endif //Header guard
 """

@@ -203,8 +203,7 @@ const UBO_CODE_FRAMEBUFFER_READ_DATA = """
 
 "Helpers to write specific chars directly to the foreground"
 const SHADER_CODE_DIRECT_CHAR_OUTPUT = """
-    $SHADER_CODE_FRAMEBUFFER_PACKING
-    $UBO_CODE_CHAR_RENDERING
+    $UBO_CODE_FRAMEBUFFER_WRITE_DATA
 
     void writeChar_Letter(int letterIdx, bool uppercase,
                         inout MaterialSurface surface)
@@ -222,6 +221,12 @@ const SHADER_CODE_DIRECT_CHAR_OUTPUT = """
         surface.foregroundShape = SHAPE_DIRECT_punctuation;
         surface.foregroundDensity = calcDensityFloat(index, u_char_rendering.n_densities_per_shape[surface.foregroundShape]);
     }
-    """
+"""
 "Gets the density index for the given punctuation character, assuming it exists"
 char_punctuation_idx(c::Char) = PUNCTUATION_DENSITY_INDICES[c]
+
+
+@bp_enum(RenderPass,
+    foreground,
+    background
+)

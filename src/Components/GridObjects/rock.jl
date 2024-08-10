@@ -233,7 +233,7 @@ end
 
             #START_GEOMETRY
                 layout (points) in;
-                layout(triangle_strip, max_vertices = 36) out;
+                layout (triangle_strip, max_vertices = 36) out;
 
                 $UBO_CODE_CAM_DATA
 
@@ -279,7 +279,7 @@ end
                 in vec2 fIn_uv;
                 in flat vec3 fIn_normal;
 
-                $UBO_CODE_FRAMEBUFFER_WRITE_DATA
+                $UBO_CODE_CHAR_RENDERING
                 $SHADER_CODE_DIRECT_CHAR_OUTPUT
                 $SHADER_CODE_UTILS
 

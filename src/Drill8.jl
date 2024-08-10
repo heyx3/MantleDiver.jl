@@ -26,9 +26,13 @@ include("Renderer/chars.jl")
 include("Renderer/segmentation.jl")
 include("Renderer/framebuffer.jl")
 include("Renderer/assets.jl")
+include("Renderer/interface_panels.jl")
 include("Renderer/world_viewport.jl")
 
 include("Audio/audio.jl")
+
+include("InterfaceWidgets/image.jl")
+include("InterfaceWidgets/text.jl")
 
 include("Components/Core/services.jl")
 include("Components/Core/transforms.jl")

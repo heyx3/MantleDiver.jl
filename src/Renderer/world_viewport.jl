@@ -70,11 +70,6 @@ end
 end
 
 
-@bp_enum(RenderPass,
-    foreground,
-    background
-)
-
 "
 Executes the render logic for the world,
     given a callback that actually issues all the world draw calls.
