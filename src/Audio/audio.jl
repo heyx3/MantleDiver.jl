@@ -29,6 +29,7 @@ const AUDIO_FOLDER = "audio"
 
 const AUDIO_DRILL = AudioAsset("Drill.wav", 1.0, 0.65)
 const AUDIO_HIT_GROUND = AudioAsset("HitGround.wav", 1.0, 0.65)
+const AUDIO_DRIVE_MANEUVER = AudioAsset("Drive.wav", 1.0, 0.65)
 const AUDIO_AMBIANCES_PLAIN = AudioAsset(joinpath("Ambiance", "Plain%i.wav"), 1.0, 0.2)
 const AUDIO_AMBIANCES_SPECIAL = AudioAsset(joinpath("Ambiance", "Special%i.wav"), 1.0, 0.2)
 
@@ -84,6 +85,7 @@ end
 mutable struct AudioFiles
     drill::LoadedAudio
     hit_ground::LoadedAudio
+    drive_maneuver::LoadedAudio
     ambiance_plain::LoadedAudio
     ambiance_special::LoadedAudio
 
@@ -94,6 +96,7 @@ function AudioFiles(project_path::AbstractString = ".")
     return AudioFiles(
         LoadedAudio(AUDIO_DRILL, project_path),
         LoadedAudio(AUDIO_HIT_GROUND, project_path),
+        LoadedAudio(AUDIO_DRIVE_MANEUVER, project_path),
         LoadedAudio(AUDIO_AMBIANCES_PLAIN, project_path),
         LoadedAudio(AUDIO_AMBIANCES_SPECIAL, project_path),
         0.6, 0.6
@@ -242,7 +245,6 @@ mutable struct PlayingLoop
         end
 
         rng = Bplus.PRNG(seed, 0xa12bc43d)
-        out_seed = rand(rng, Int64)
         first_buffer_idx = rand(rng, 1:length(sounds))
 
         current_sound = PlayingSound(LoadedAudio(sounds[first_buffer_idx], audio.source),
@@ -453,7 +455,7 @@ function SampledSignals.unsafe_read!(m::AudioManager{NChannels, TSample},
     # Write all the sounds to the output buffer.
     sound_idx::Int = 1
     while sound_idx <= length(m.sounds_audio_thread)
-        if advance_playback!(m.sounds_audio_thread[sound_idx], out_samples, volume / priority_scaling)
+        if advance_playback!(m.sounds_audio_thread[sound_idx], out_samples, volume * priority_scaling)
             sound_idx += 1
         else
             deleteat!(m.sounds_audio_thread, sound_idx)
@@ -462,7 +464,7 @@ function SampledSignals.unsafe_read!(m::AudioManager{NChannels, TSample},
     # Write all the loops to the output buffer in the same way.
     sound_idx = 1
     while sound_idx <= length(m.loops_audio_thread)
-        if advance_playback!(m.loops_audio_thread[sound_idx], out_samples, volume / priority_scaling)
+        if advance_playback!(m.loops_audio_thread[sound_idx], out_samples, volume * priority_scaling)
             sound_idx += 1
         else
             deleteat!(m.loops_audio_thread, sound_idx)

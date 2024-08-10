@@ -116,6 +116,11 @@ end
         this.src = src
         this.heading = heading
         this.computed_shake_strengths = zero(Vec{N_SHAKE_MODES, Float32})
+
+        # Play a driving noise.
+        services::Services = get_component(world, Services)[1]
+        play_sound(services.audio,
+                   services.audio_files.drive_maneuver)
     end
 
     function TICK()
