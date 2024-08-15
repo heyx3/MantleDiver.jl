@@ -138,7 +138,9 @@ const SHADER_CALC_DENSITY_INDEX = """
 
     #endif // CALC_DENSITY_INDEX_H
 """
-calc_density_float(zero_based_idx, n_indices)::Float32 = saturate(Float32(zero_based_idx) / Float32(n_indices - 1))
+calc_density_float(zero_based_idx, n_indices) = saturate(@f32(
+    (zero_based_idx + 0.5) / (n_indices)
+))
 
 
 "An unpacked CPU representation of a framebuffer foreground pixel"
@@ -152,6 +154,12 @@ end
 struct CharBackgroundValue
     color::UInt8
     density::Float32
+end
+
+"An unpacked representation of an optional foreground and/or background pixel"
+@kwdef struct CharDisplayValue
+    foreground::Optional{CharForegroundValue} = nothing
+    background::Optional{CharBackgroundValue} = nothing
 end
 
 "Gets the shape and density needed to represent the given character"

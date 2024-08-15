@@ -37,6 +37,8 @@ mutable struct Assets
     shader_render_chars::Program
     shader_render_segmentations_line::Program
     shader_render_segmentations_corner::Program
+    shader_render_interface_foreground::Program
+    shader_render_interface_background::Program
 
     chars_ubo_data::CharRenderAssetBuffer
     chars_ubo::GL.Buffer
@@ -78,20 +80,22 @@ function Assets()
     )
 
     # Build a matrix of char data, to build the density_chars_lookup.
-    # Remember to put the space character behind each shape's list of ASCII chars!
+    # Remember to put the space character behind each non-direct shape.
     max_density = 1 + maximum(length.(values(ASCII_CHARS_BY_SHAPE_THEN_DENSITY)))
     n_shapes = length(CharShapeType.instances())
     chars_atlas_lookup = Matrix{vRGBAf}(undef, max_density, n_shapes)
     for shape in 1:n_shapes
         shape_enum = CharShapeType.from(shape - 1)
+        shape_is_direct = shape_enum in DIRECT_CHAR_SHAPES
         by_density = ASCII_CHARS_BY_SHAPE_THEN_DENSITY[shape_enum]
         for density in 1:max_density
-            char = if density == 1
+            index_offset = (shape_is_direct ? 0 : 1)
+            char::Char = if !shape_is_direct && (density == 1)
                 ' '
-            elseif density > length(by_density) + 1
+            elseif density > length(by_density) + index_offset
                 ASCII_ERROR_CHAR
             else
-                by_density[density - 1]
+                by_density[density - index_offset]
             end
 
             uv_rect = char_atlas_uv_regions[char]
@@ -333,6 +337,8 @@ function Assets()
                   shader_render_chars,
                   GL.bp_glsl_str(SHADER_RENDER_SEGMENTATION_LINES),
                   GL.bp_glsl_str(SHADER_RENDER_SEGMENTATION_LINES),
+                  GL.bp_glsl_str("#define RENDER_FOREGROUND \n $SHADER_CODE_RENDER_INTERFACE"),
+                  GL.bp_glsl_str("#define RENDER_BACKGROUND \n $SHADER_CODE_RENDER_INTERFACE"),
                   chars_ubo_data,
                   chars_ubo,
                   GL.Texture(GL.DepthStencilFormats.depth_16u,
@@ -351,6 +357,10 @@ function Base.close(a::Assets)
     close(a.shader_render_chars)
     close(a.chars_ubo)
     close(a.blank_depth_tex)
+    close(a.shader_render_segmentations_corner)
+    close(a.shader_render_segmentations_line)
+    close(a.shader_render_interface_foreground)
+    close(a.shader_render_interface_background)
 
     @c FT_Done_Face(a.chars_font)
     @c FT_Done_FreeType(a.ft_lib)

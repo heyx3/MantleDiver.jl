@@ -46,7 +46,7 @@ mutable struct Panel
                 Dict{v2i, CharForegroundValue}(),
                 Dict{v2i, CharBackgroundValue}(),
                 TWidget(widget_args...; widget_kw_args...))
-        widget_init!(widget, p)
+        widget_init!(p.widget, p)
         return p
     end
 end
@@ -59,7 +59,7 @@ function panel_tick!(p::Panel, delta_seconds::Float32)
     return nothing
 end
 function panel_kill!(p::Panel)
-    replace_widget!(p, WidgetNull())
+    replace_widget!(p, WidgetNull)
     return nothing
 end
 
@@ -93,13 +93,13 @@ function for_panels_depth_first(to_do, p::Panel, screen_rect::Box2Di)
         min = min_inclusive(screen_rect) + min_inclusive(p.space) - 1,
         size = size(p.space)
     )
-    to_do(p, p.space, sub_rect)
-    for_panels_depth_first(to_do, p.children, screen_rect)
+    to_do(p, sub_rect)
+    for_panels_depth_first(to_do, p.children, sub_rect)
     return nothing
 end
 function for_panels_depth_first(to_do, ps::Vector{Panel}, screen_rect::Box2Di)
     for p in ps
-        for_panels_depth_first(to_do, child, screen_rect)
+        for_panels_depth_first(to_do, p, screen_rect)
     end
     return nothing
 end
@@ -119,6 +119,13 @@ mutable struct _Interface{TForegroundPixel, TBackgroundPixel}
     n_max_background_points::Int
 end
 
+function Base.close(i::_Interface)
+    panel_kill!.(i.panels)
+    close(i.foreground_mesh)
+    close(i.background_mesh)
+    close(i.points_buffer_foreground)
+    close(i.points_buffer_background)
+end
 
 function for_panels_depth_first(to_do, i::_Interface, screen_rect::Box2Di)
     return for_panels_depth_first(to_do, i.panels, screen_rect)
@@ -131,7 +138,6 @@ end
 ################################
 #   Panel rendering
 
-
 "The per-vertex data that goes into the panel-rendering foreground shader"
 struct InterfaceGpuPointForeground
     pixel::v2u
@@ -139,10 +145,14 @@ struct InterfaceGpuPointForeground
     shape::UInt8
     packed_color_transparency::UInt8
 end
-InterfaceGpuPointForeground(pixel::Vec2, density, shape, color, is_transparent::Bool) = InterfaceGpuPointForeground(
+InterfaceGpuPointForeground(pixel::Vec2, density_f, shape, color, is_transparent::Bool) = InterfaceGpuPointForeground(
     convert(v2u, pixel),
-    floor(UInt8, clamp(density, 0, 255)),
-    convert(UInt8, shape),
+    floor(UInt8, clamp(density_f * 256, 0, 255)),
+    if shape isa E_CharShapeType
+        UInt8(shape)
+    else
+        convert(UInt8, shape)
+    end,
     convert(UInt8, color) | (is_transparent ? 0x80 : 0x00)
 )
 InterfaceGpuPointForeground(pixel::Vec2, char, color, is_transparent::Bool) = InterfaceGpuPointForeground(
@@ -166,7 +176,7 @@ interface_gpu_point_foreground_attributes(data_source_idx::Integer) = Bplus.GL.V
     ),
     [
         Bplus.GL.VSInput(v2u),
-        Bplus.GL.VSInput_FVector(Vec{1, Float32}, true),
+        Bplus.GL.VSInput_FVector(Vec{1, UInt8}, true),
         Bplus.GL.VSInput(UInt8),
         Bplus.GL.VSInput(UInt8)
     ]
@@ -178,9 +188,9 @@ struct InterfaceGpuPointBackground
     density::UInt8
     packed_color_transparency::UInt8
 end
-InterfaceGpuPointBackground(pixel, density, color, is_transparent) = InterfaceGpuPointBackground(
+InterfaceGpuPointBackground(pixel, density_f, color, is_transparent) = InterfaceGpuPointBackground(
     convert(v2u, pixel),
-    floor(UInt8, clamp(density, 0, 255)),
+    floor(UInt8, clamp(density_f * 256, 0, 255)),
     convert(UInt8, color) | (is_transparent ? 0x80 : 0x00)
 )
 "Gets the description of the interface background pixel data for a `Bplus.GL.Mesh` that has it"
@@ -196,7 +206,7 @@ interface_gpu_point_background_attributes(data_source_idx::Integer) = Bplus.GL.V
     ),
     [
         Bplus.GL.VSInput(v2u),
-        Bplus.GL.VSInput_FVector(Vec{1, Float32}, true),
+        Bplus.GL.VSInput_FVector(Vec{1, UInt8}, true),
         Bplus.GL.VSInput(UInt8)
     ]
 )
@@ -205,19 +215,19 @@ const Interface = _Interface{InterfaceGpuPointForeground, InterfaceGpuPointBackg
 function _Interface{InterfaceGpuPointForeground, InterfaceGpuPointBackground}(
              panels,
              initial_foreground_buffer_count::Int = 1024,
-             initial_background_bufer_count=initial_foreground_buffer_count
+             initial_background_buffer_count=initial_foreground_buffer_count
          )
     # Create dummy buffers/meshes, then call the function to resize them.
     interface = _Interface(
         collect(Panel, panels),
         Bplus.GL.Buffer(64, false), Bplus.GL.Buffer(64, false),
-        Bplus.GL.Mesh(Bplus.GL.PrimitiveTypes.point, [ ], [ ]),
-        Bplus.GL.Mesh(Bplus.GL.PrimitiveTypes.point, [ ], [ ]),
+        Bplus.GL.Mesh(Bplus.GL.PrimitiveTypes.point, VertexDataSource[ ], VertexAttribute[ ]),
+        Bplus.GL.Mesh(Bplus.GL.PrimitiveTypes.point, VertexDataSource[ ], VertexAttribute[ ]),
         Bplus.Utilities.preallocated_vector(InterfaceGpuPointForeground, initial_foreground_buffer_count),
         Bplus.Utilities.preallocated_vector(InterfaceGpuPointBackground, initial_background_buffer_count),
         0, 0
     )
-    presize_interface_buffers!(interface, initial_foreground_buffer_count, initial_background_bufer_count)
+    presize_interface_buffers!(interface, initial_foreground_buffer_count, initial_background_buffer_count)
     return interface
 end
 
@@ -266,7 +276,7 @@ function presize_interface_buffers!(interface::Interface, n_foreground_points::I
 end
 
 
-const SHADER_CODE_RENDER_PIXELS = """
+const SHADER_CODE_RENDER_INTERFACE = """
     //Define RENDER_FOREGROUND for foreground rendering or RENDER_BACKGROUND for background rendering.
     #if !defined(RENDER_FOREGROUND) && !defined(RENDER_BACKGROUND)
         #error Must define whether we're doing foreground or background rendering!
@@ -279,7 +289,7 @@ const SHADER_CODE_RENDER_PIXELS = """
         in uvec2 vIn_Cell;
         in float vIn_Density;
         in uint vIn_ColorAndTransparency;
-        #ifdef RENDER_FOREGROUND
+        #if defined(RENDER_FOREGROUND)
             in uint vIn_Shape;
         #else
             //Nothing extra for background
@@ -294,8 +304,8 @@ const SHADER_CODE_RENDER_PIXELS = """
 
             //Copy the data to the surface structure, whether foreground or background.
             MaterialSurface surf;
-            surf.foregroundColor = vIn_ColorAndTransparency & 0x7f;
-            surf.isTransparent =   vIn_ColorAndTransparency & 0x80;
+            surf.foregroundColor = (vIn_ColorAndTransparency & 0x7f);
+            surf.isTransparent =   (vIn_ColorAndTransparency & 0x80) != 0;
             surf.backgroundColor = surf.foregroundColor;
             surf.foregroundDensity = vIn_Density;
             surf.backgroundDensity = surf.foregroundDensity;
@@ -305,7 +315,7 @@ const SHADER_CODE_RENDER_PIXELS = """
                 gIn_PackedFramebufferData = packForeground(surf);
             #else
                 gIn_PackedFramebufferData = uvec2(packBackground(surf, false), 0);
-            #end
+            #endif
         }
 
     #START_GEOMETRY
@@ -321,35 +331,39 @@ const SHADER_CODE_RENDER_PIXELS = """
 
         void main() {
             vec2 texel = 1.0 / vec2(u_FramebufferSize);
-            vec2 cellMinT = vec2(gIn_Cell[0] * texel,
+            //Note that we are correcting for Julia's 1-based indexing here.
+            vec2 cellMinT = vec2(gIn_Cell[0] - 1) * texel,
                  cellMaxT = cellMinT + texel;
-            vec4 cellCornersT = vec4(cellMinT, cellMaxT)
+            vec4 cellCornersT = vec4(cellMinT, cellMaxT);
 
             #define GEOM_VERT(X, Y) { \
                 fIn_PackedFramebufferData = gIn_PackedFramebufferData[0]; \
-                gl_Position = mix(vec2(-1, -1), vec(1, 1), vec2(cellCornersT.X, cellCornersT.Y)); \
+                gl_Position = vec4( \
+                    clamp(mix(vec2(-1, -1), vec2(1, 1), vec2(cellCornersT.X, cellCornersT.Y)), \
+                          vec2(-1, -1), vec2(1, 1)), \
+                    0.0000001, 1 \
+                ); \
+                EmitVertex(); \
             }
             GEOM_VERT(x, y)
             GEOM_VERT(z, y)
             GEOM_VERT(x, w)
             GEOM_VERT(z, w)
+            EndPrimitive();
         }
 
     #START_FRAGMENT
-        $SHADER_CODE_DIRECT_CHAR_OUTPUT
+        $UBO_CODE_FRAMEBUFFER_WRITE_DATA
 
         in flat uvec2 fIn_PackedFramebufferData;
         void main() {
             //Instead of calling 'writeFramebuffer()', we've already packed the data ourselves.
-            fOut_packed = fIn_PackedFramebufferData;
+            fOut_packed = uvec4(fIn_PackedFramebufferData, 0, 0);
         }
 """
 
-"
-Uploads this interface's foreground and background data to the GPU so it can be rendered.
-Ideally call this immediately after the interface is done updating.
-"
-function update_interface_gpu_data(interface::Interface)
+
+function update_interface!(interface::Interface, delta_seconds::Float32, resolution::Vec2{<:Integer})
     # Generate the vertex data.
     empty!(interface.foreground_points_to_draw)
     empty!(interface.background_points_to_draw)
@@ -387,8 +401,8 @@ function update_interface_gpu_data(interface::Interface)
     # Upload the vertex data.
     presize_interface_buffers!(
         interface,
-        length(interface.points_buffer_foreground),
-        length(interface.points_buffer_background)
+        length(interface.foreground_points_to_draw),
+        length(interface.background_points_to_draw)
     )
     Bplus.GL.set_buffer_data(
         interface.points_buffer_foreground,
@@ -399,28 +413,30 @@ function update_interface_gpu_data(interface::Interface)
         interface.background_points_to_draw
     )
 end
-"
-Renders the given interface, using the compiled shaders,
-    performing either the foreground or background pass.
-
-Make sure you call `update_interface_gpu_data()` in between each call to this!
-"
-function render_panels(interface::Interface,
-                       shader::Bplus.GL.Program,
-                       pass::E_RenderPass,
-                       resolution::v2u)
+function render_interface(interface::Interface,
+                          shader::Bplus.GL.Program,
+                          pass::E_RenderPass,
+                          resolution::Vec2{<:Integer})
     @d8_assert(in(pass, (RenderPass.foreground, RenderPass.background)),
                "Invalid pass: ", pass)
     is_foreground::Bool = (pass == RenderPass.foreground)
 
     # Execute the draw call.
-    Bplus.GL.set_uniform(shader, "u_FramebufferSize", resolution)
-    Bplus.GL.render_mesh(
-        is_foreground ? interface.foreground_mesh : interface.background_mesh,
-        shader,
-        elements = Bplus.Math.IntervalU(
-            min=1,
-            size=(is_foreground ? length(interface.points_buffer_foreground) : length(interface.points_buffer_background))
+    Bplus.GL.set_uniform(shader, "u_FramebufferSize", convert(v2u, resolution))
+    Bplus.GL.with_depth_test(Bplus.GL.ValueTests.pass) do
+     Bplus.GL.with_depth_writes(true) do
+      Bplus.GL.with_blending(Bplus.GL.make_blend_opaque(Bplus.GL.BlendStateRGB)) do
+        Bplus.GL.render_mesh(
+            is_foreground ? interface.foreground_mesh : interface.background_mesh,
+            shader,
+            elements = Bplus.Math.IntervalU(
+                min=1,
+                size=(if is_foreground
+                          length(interface.foreground_points_to_draw)
+                      else
+                          length(interface.background_points_to_draw)
+                      end)
+            )
         )
-    )
+    end end end
 end

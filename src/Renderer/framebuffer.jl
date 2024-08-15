@@ -203,6 +203,7 @@ const UBO_CODE_FRAMEBUFFER_READ_DATA = """
 
 "Helpers to write specific chars directly to the foreground"
 const SHADER_CODE_DIRECT_CHAR_OUTPUT = """
+    $SHADER_CALC_DENSITY_INDEX
     $UBO_CODE_FRAMEBUFFER_WRITE_DATA
 
     void writeChar_Letter(int letterIdx, bool uppercase,

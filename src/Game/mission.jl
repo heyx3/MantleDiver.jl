@@ -1,6 +1,6 @@
 "A single game session"
 mutable struct Mission
-    ecs::ECS.World
+    ecs::Bplus.ECS.World
     grid::GridManager
     ecs_services::Services
 
@@ -64,6 +64,22 @@ mutable struct Mission
             SegmentationLine(segment_bounds.zy, -segment_lengths.xz)
         ]
 
+        # Set up an interface.
+        player_interface = Interface(Panel[
+            Panel(WidgetRing, player_view_resolution, [
+                WidgetRingLayer(
+                    CharDisplayValue(
+                        foreground = CharForegroundValue('X')
+                    )
+                ),
+                WidgetRingLayer(
+                    corners=CharDisplayValue(
+                        foreground = CharForegroundValue('O')
+                    )
+                )
+            ])
+        ])
+
         ambient_sound_loop = play_loop(
             audio,
             audio_files.ambiance_plain,
@@ -73,7 +89,11 @@ mutable struct Mission
         return new(
             world, grid, services,
             loadout, cab,
-            WorldViewport(player_view_resolution, segment_lines),
+            WorldViewport(
+                player_view_resolution,
+                segment_lines,
+                player_interface
+            ),
             cam_ubo,
             ambient_sound_loop,
             Vector{Renderable}()
@@ -98,27 +118,39 @@ function tick!(mission::Mission, delta_seconds::Float32)::Bool
         chunk_at!(mission.grid, player_voxel_pos + (corner * CHUNK_SIZE))
     end
 
+    # Update the player's viewport.
+    let int = mission.player_viewport.interface
+        if exists(int)
+            update_interface!(int, delta_seconds, mission.player_viewport.resolution)
+        end
+    end
+
+    # For now, the mission never ends.
     return true
+end
+
+
+@kwdef mutable struct MissionDrawSettings
+    enable_world::Bool = true # Disables world but not interface/segmentation rendering
 end
 
 "
 Renders the mission into the player's viewport.
 You may display this viewport with `post_process_framebuffer(mission.player_viewport, ...)`.
 "
-function render_mission(mission::Mission, assets::Assets, settings::ViewportDrawSettings)
+function render_mission(mission::Mission, assets::Assets,
+                        mission_settings::MissionDrawSettings,
+                        viewport_settings::ViewportDrawSettings)
     @d8_debug(@check_gl_logs "Before rendering into framebuffer")
 
     # Collect renderables.
     empty!(mission.buffer_renderables)
     append!(mission.buffer_renderables, (c for (c, e) in get_components(mission.ecs, Renderable)))
-    #TODO: Pre-sort by depth?
-
-    render_data = WorldRenderData(
-        mission.player_viewport
-    )
+    #TODO: Pre-sort by depth per-viewport?
 
     # Set up the player camera data buffer.
-    #TODO: Re-use a CameaDataBuffer instance so we're not constantly allocating it.
+    #TODO: The viewport should have a world position/orientation and projection settings, and set up this UBO right before rendering.
+    #TODO: Re-use a CameraDataBuffer instance so we're not constantly allocating it.
     p_pos = get_cosmetic_pos(mission.player.entity)
     p_rot = get_cosmetic_rot(mission.player.entity)
     GL.set_buffer_data(mission.player_camera_ubo, CameraDataBuffer(Bplus.Cam3D{Float32}(
@@ -133,13 +165,19 @@ function render_mission(mission::Mission, assets::Assets, settings::ViewportDraw
     )))
     GL.set_uniform_block(mission.player_camera_ubo, UBO_INDEX_CAM_DATA)
 
-    # Render into the main framebuffer.
-    render_to_framebuffer(mission.player_viewport, assets) do pass::E_RenderPass
-        for renderable in mission.buffer_renderables
-            renderable.render(render_data)
-            @d8_debug(@check_gl_logs "After rendering " typeof(renderable))
+    # Render into the player's viewport.
+    render_data = WorldRenderData(
+        mission.player_viewport
+    )
+    render_to_framebuffer(mission.player_viewport, assets, viewport_settings) do pass::E_RenderPass
+        if mission_settings.enable_world
+            for renderable in mission.buffer_renderables
+                renderable.render(render_data)
+                @d8_debug(@check_gl_logs "After rendering " typeof(renderable))
+            end
         end
-        return nothing # output of render() is type-unstable, so don't return it
+        # Make sure nothing type-unstable is returned.
+        return nothing
     end
 
     @d8_debug(@check_gl_logs "After rendering into framebuffer")

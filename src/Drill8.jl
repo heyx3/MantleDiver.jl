@@ -26,13 +26,14 @@ include("Renderer/chars.jl")
 include("Renderer/segmentation.jl")
 include("Renderer/framebuffer.jl")
 include("Renderer/assets.jl")
-include("Renderer/interface_panels.jl")
+include("Renderer/interface.jl")
 include("Renderer/world_viewport.jl")
 
 include("Audio/audio.jl")
 
 include("InterfaceWidgets/image.jl")
 include("InterfaceWidgets/text.jl")
+include("InterfaceWidgets/ring.jl")
 
 include("Components/Core/services.jl")
 include("Components/Core/transforms.jl")
@@ -59,7 +60,7 @@ include("Debug/debug_gui_widgets.jl")
 
 
 get_imgui_current_drawable_region() = Box2Df(
-    #TODO Handle scroll offset, then move this calculation into a B+ function
+    #TODO Handle scroll offset, then move this function into Bplus.GUI
     min = convert(v2f, CImGui.GetCursorPos()) -
             convert(v2f, CImGui.GetWindowPos()),
     size = convert(v2f, CImGui.GetContentRegionAvail())
@@ -186,10 +187,11 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
             end
 
             # Render the player's POV.
-            player_viewport_settings = ViewportDrawSettings(
-                output_mode = @d8_debug(debug_gui.render_mode, FramebufferRenderMode.regular)
+            player_viewport_settings = @d8_debug debug_gui.viewport_draw_settings ViewportDrawSettings(
             )
-            render_mission(mission, assets, player_viewport_settings)
+            mission_draw_settings = @d8_debug debug_gui.mission_draw_settings MissionDrawSettings(
+            )
+            render_mission(mission, assets, mission_draw_settings, player_viewport_settings)
             @d8_debug(@check_gl_logs "After mission render")
 
             # Draw the game to the screen (or to a Target in debug builds).

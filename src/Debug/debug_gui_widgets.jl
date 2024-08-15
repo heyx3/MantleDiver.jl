@@ -121,7 +121,8 @@ mutable struct DebugGui
     fast_forward_speed::Int32
 
     # Post-process modes:
-    render_mode::E_FramebufferRenderMode
+    mission_draw_settings::MissionDrawSettings
+    viewport_draw_settings::ViewportDrawSettings
 
     # Debug rendering the game:
     game_view_sorted_elements::Vector{Tuple{DebugGuiVisuals, Entity, Int64}}
@@ -139,7 +140,8 @@ mutable struct DebugGui
 
     DebugGui() = new(
         DebugGuiSpeed.play, 3,
-        FramebufferRenderMode.regular,
+        MissionDrawSettings(),
+        ViewportDrawSettings(),
         [ ], 1,
         128,
         Target(
@@ -222,21 +224,26 @@ function gui_debug_main_view(gui::DebugGui, mission::Mission, rendered_game::Tar
         )
     end
 
-    CImGui.Text("Render mode:")
-    function render_mode_option(name::String, value::E_FramebufferRenderMode)
-        CImGui.SameLine()
-        if CImGui.RadioButton(name, gui.render_mode == value)
-            gui.render_mode = value
+    # Provide an editor for render settings.
+    @c CImGui.Checkbox("Render world?", &gui.mission_draw_settings.enable_world)
+    CImGui.SameLine()
+    @c CImGui.Checkbox("Render interface?", &gui.viewport_draw_settings.enable_interface)
+    CImGui.SameLine()
+    @c CImGui.Checkbox("Render segmentations?", &gui.viewport_draw_settings.enable_segmentation)
+    for (i, (name, value)) in enumerate(( ("Regular", FramebufferRenderMode.regular),
+                                          ("Chars only", FramebufferRenderMode.char_greyscale),
+                                          ("FG Shape", FramebufferRenderMode.foreground_shape),
+                                          ("FG Color", FramebufferRenderMode.foreground_color),
+                                          ("FG Density", FramebufferRenderMode.foreground_density),
+                                          ("bg Color", FramebufferRenderMode.background_color),
+                                          ("bg Density", FramebufferRenderMode.background_density),
+                                          ("Transparency Flag", FramebufferRenderMode.is_foreground_transparent)
+                                       ))
+        (i > 1) && CImGui.SameLine()
+        if CImGui.RadioButton(name, gui.viewport_draw_settings.output_mode == value)
+            gui.viewport_draw_settings.output_mode = value
         end
     end
-    render_mode_option("Final", FramebufferRenderMode.regular)
-    render_mode_option("Chars", FramebufferRenderMode.char_greyscale)
-    render_mode_option("FG Shape", FramebufferRenderMode.foreground_shape)
-    render_mode_option("FG Color", FramebufferRenderMode.foreground_color)
-    render_mode_option("FG Density", FramebufferRenderMode.foreground_density)
-    render_mode_option("BG Color", FramebufferRenderMode.background_color)
-    render_mode_option("BG Density", FramebufferRenderMode.background_density)
-    render_mode_option("Transparency", FramebufferRenderMode.is_foreground_transparent)
 
     CImGui.Image(GUI.gui_tex_handle(rendered_game.attachment_colors[1].tex),
                  convert(v2f, rendered_game.size),
@@ -508,6 +515,15 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
         )
     ], gui)
 
+    gui_visualize_resource_category("Interface", [
+        "Foreground Shader" => assets.shader_render_interface_foreground,
+        "Background Shader" => assets.shader_render_interface_background,
+        "Foreground Buffer" => mission.player_viewport.interface.points_buffer_foreground,
+        "Background Buffer" => mission.player_viewport.interface.points_buffer_background,
+        "Foreground Mesh" => mission.player_viewport.interface.foreground_mesh,
+        "Background Mesh" => mission.player_viewport.interface.background_mesh
+    ], gui)
+
     try_rocks = get_component(mission.ecs, Renderable_Rock)
     if exists(try_rocks)
         rocks::Renderable_Rock = try_rocks[1]
@@ -543,36 +559,39 @@ gui_resource_color(::Type{GL.Mesh}) = (0.6, 1.0, 0.6, 1)
 
 gui_visualize_resource(r, gui::DebugGui) = CImGui.Text(string(r))
 
-gui_visualize_resource(p::GL.Program, gui::DebugGui) = GUI.gui_within_fold("$(length(p.uniforms)) uniforms, $(length(p.uniform_blocks)) UBO's, $(length(p.storage_blocks)) SSBO's") do
-    CImGui.Text("Uniforms:")
-    GUI.gui_with_indentation() do 
-        for (name, data) in p.uniforms
-            CImGui.Text("$name: $(data.type)")
+function gui_visualize_resource(p::GL.Program, gui::DebugGui)
+    GUI.gui_with_nested_id(GL.gl_type(GL.get_ogl_handle(p))) do
+      GUI.gui_within_fold("$(length(p.uniforms)) uniforms, $(length(p.uniform_blocks)) UBO's, $(length(p.storage_blocks)) SSBO's") do
+        CImGui.Text("Uniforms:")
+        GUI.gui_with_indentation() do 
+            for (name, data) in p.uniforms
+                CImGui.Text("$name: $(data.type)")
+            end
+            if isempty(p.uniforms)
+                CImGui.Text("[none]")
+            end
         end
-        if isempty(p.uniforms)
-            CImGui.Text("[none]")
-        end
-    end
 
-    CImGui.Text("UBO's:")
-    GUI.gui_with_indentation() do
-        for (name, data) in p.uniform_blocks
-            CImGui.Text("$name: $(data.byte_size) bytes")
+        CImGui.Text("UBO's:")
+        GUI.gui_with_indentation() do
+            for (name, data) in p.uniform_blocks
+                CImGui.Text("$name: $(data.byte_size) bytes")
+            end
+            if isempty(p.uniform_blocks)
+                CImGui.Text("[none]")
+            end
         end
-        if isempty(p.uniform_blocks)
-            CImGui.Text("[none]")
-        end
-    end
 
-    CImGui.Text("SSBO's:")
-    GUI.gui_with_indentation() do
-        for (name, data) in p.storage_blocks
-            CImGui.Text("$name: $(data.byte_size) bytes")
+        CImGui.Text("SSBO's:")
+        GUI.gui_with_indentation() do
+            for (name, data) in p.storage_blocks
+                CImGui.Text("$name: $(data.byte_size) bytes")
+            end
+            if isempty(p.storage_blocks)
+                CImGui.Text("[none]")
+            end
         end
-        if isempty(p.storage_blocks)
-            CImGui.Text("[none]")
-        end
-    end
+    end end
 end
 
 function gui_visualize_resource(t::GL.Texture, gui::DebugGui)
@@ -773,6 +792,8 @@ function gui_visualize_resource(bs::BufferAsStruct, gui::DebugGui)
         gui_visualize_resource(data, gui)
     end
 end
+
+# "Decorator to visualize a buffer as an array of some"
 
 function gui_visualize_resource(d::GL.AbstractOglBlock, gui::DebugGui)
     GUI.gui_with_indentation() do
