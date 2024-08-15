@@ -69,12 +69,21 @@ mutable struct Mission
             Panel(WidgetRing, player_view_resolution, [
                 WidgetRingLayer(
                     CharDisplayValue(
-                        foreground = CharForegroundValue('X')
+                        foreground = CharForegroundValue('X'),
+                        background = CharBackgroundValue(0, 1)
                     )
                 ),
                 WidgetRingLayer(
                     corners=CharDisplayValue(
-                        foreground = CharForegroundValue('O')
+                        foreground = CharForegroundValue('O'),
+                        background = CharBackgroundValue(0, 1)
+                    ),
+                    edges_horizontal=CharDisplayValue(
+                        foreground = CharForegroundValue('-')
+                    ),
+                    edges_vertical =CharDisplayValue(
+                        foreground = CharForegroundValue('|', 1, true),
+                        background = CharBackgroundValue(0, 1)
                     )
                 )
             ])

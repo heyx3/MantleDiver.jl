@@ -104,7 +104,8 @@ const ASCII_CHARS_BY_SHAPE_THEN_DENSITY = Dict(
     CharShapeType.DIRECT_uppercase => collect('A':'Z'),
     CharShapeType.DIRECT_digits => collect('0':'9'),
     CharShapeType.DIRECT_punctuation => [
-        ',', ';', '\'', '"', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
+        ',', ';', '\'', '"', '-', '_', '+', '=',
+        '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
         '.', '?', '/', '\\',
         '<', '>', '[', ']', '{', '}',
         '`', '~', '|'

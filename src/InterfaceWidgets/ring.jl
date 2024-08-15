@@ -61,11 +61,11 @@ function widget_init!(r::WidgetRing, panel::Panel)
         process(corners.xw, layer_chars.corner_minX_maxY)
         process(corners.zw, layer_chars.corner_maxX_maxY)
 
-        for x in corner_min.x:corner_max.x
+        for x in (corner_min.x+1):(corner_max.x-1)
             process(v2i(x, corner_min.y), layer_chars.edge_minY)
             process(v2i(x, corner_max.y), layer_chars.edge_maxY)
         end
-        for y in corner_min.y:corner_max.y
+        for y in (corner_min.y+1):(corner_max.y-1)
             process(v2i(corner_min.x, y), layer_chars.edge_minX)
             process(v2i(corner_max.x, y), layer_chars.edge_maxX)
         end
