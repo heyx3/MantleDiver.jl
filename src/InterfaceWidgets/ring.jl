@@ -10,6 +10,8 @@ struct WidgetRingLayer
     corner_minX_maxY::CharDisplayValue
     corner_maxX_maxY::CharDisplayValue
 
+    #TODO: "Dropoff" values between the corner and the normal edges
+
     function WidgetRingLayer(fallback::CharDisplayValue = CharDisplayValue();
                              edges::CharDisplayValue = fallback,
                              corners::CharDisplayValue = fallback,

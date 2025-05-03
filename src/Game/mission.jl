@@ -68,25 +68,23 @@ mutable struct Mission
         player_interface = Interface(Panel[
             Panel(WidgetRing, player_view_resolution, [
                 WidgetRingLayer(
-                    CharDisplayValue(
-                        foreground = CharForegroundValue('X'),
-                        background = CharBackgroundValue(0, 1)
+                    corners=CharDisplayValue(
+                        foreground = CharForegroundValue('0'),
+                        background = CharBackgroundValue(1, 0.25)
+                    ),
+                    edges=CharDisplayValue(
+                        background=CharBackgroundValue(0, 1)
                     )
                 ),
                 WidgetRingLayer(
-                    corners=CharDisplayValue(
-                        foreground = CharForegroundValue('O'),
-                        background = CharBackgroundValue(0, 1)
-                    ),
-                    edges_horizontal=CharDisplayValue(
-                        foreground = CharForegroundValue('-')
-                    ),
-                    edges_vertical =CharDisplayValue(
-                        foreground = CharForegroundValue('|', 1, true),
+                    CharDisplayValue(
                         background = CharBackgroundValue(0, 1)
                     )
                 )
             ])
+            # Panel(WidgetControlMap, player_view_resolution, [
+            #     ControlWidgetIcon
+            # ])
         ])
 
         ambient_sound_loop = play_loop(

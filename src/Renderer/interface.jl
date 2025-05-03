@@ -104,6 +104,23 @@ function for_panels_depth_first(to_do, ps::Vector{Panel}, screen_rect::Box2Di)
     return nothing
 end
 
+"Helper for widgets to place things inside a panel (or delete what was there)"
+function place_panel_char!(panel::Panel, char::CharDisplayValue, pos::Vec2{<:Integer})
+    if exists(char.foreground)
+        panel.foregrounds[pos] = char.foreground
+    else
+        delete!(panel.foregrounds, pos)
+    end
+
+    if exists(char.background)
+        panel.backgrounds[pos] = char.background
+    else
+        delete!(panel.backgrounds, pos)
+    end
+
+    return nothing
+end
+
 
 mutable struct _Interface{TForegroundPixel, TBackgroundPixel}
     panels::Vector{Panel} # Drawn in order, so later panels cover earlier ones
@@ -277,7 +294,6 @@ end
 
 
 const SHADER_CODE_RENDER_INTERFACE = """
-    //Define RENDER_FOREGROUND for foreground rendering or RENDER_BACKGROUND for background rendering.
     #if !defined(RENDER_FOREGROUND) && !defined(RENDER_BACKGROUND)
         #error Must define whether we're doing foreground or background rendering!
     #endif
@@ -309,7 +325,8 @@ const SHADER_CODE_RENDER_INTERFACE = """
             surf.backgroundColor = surf.foregroundColor;
             surf.foregroundDensity = vIn_Density;
             surf.backgroundDensity = surf.foregroundDensity;
-            //Copy buffer-specific data.
+
+            //Copy buffer-specific data then write shader outputs.
             #ifdef RENDER_FOREGROUND
                 surf.foregroundShape = vIn_Shape;
                 gIn_PackedFramebufferData = packForeground(surf);
@@ -357,7 +374,8 @@ const SHADER_CODE_RENDER_INTERFACE = """
 
         in flat uvec2 fIn_PackedFramebufferData;
         void main() {
-            //Instead of calling 'writeFramebuffer()', we've already packed the data ourselves.
+            //Instead of calling 'writeFramebuffer()',
+            //    we've already packed the data ourselves in the vertex shader.
             fOut_packed = uvec4(fIn_PackedFramebufferData, 0, 0);
         }
 """
