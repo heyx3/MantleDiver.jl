@@ -382,6 +382,11 @@ const SHADER_CODE_RENDER_INTERFACE = """
 
 
 function update_interface!(interface::Interface, delta_seconds::Float32, resolution::Vec2{<:Integer})
+    # Update panels/widgets.
+    for panel in interface.panels
+        panel_tick!(panel, delta_seconds)
+    end
+
     # Generate the vertex data.
     empty!(interface.foreground_points_to_draw)
     empty!(interface.background_points_to_draw)
@@ -391,9 +396,6 @@ function update_interface!(interface::Interface, delta_seconds::Float32, resolut
     )
     for_panels_depth_first(interface, screen_rect) do panel::Panel, rect::Box2Di
         for (relative_pos, fore::CharForegroundValue) in panel.foregrounds
-            @d8_assert(Bplus.Math.is_touching(rect, relative_pos),
-                        typeof(panel.widget), " panel space of ", rect,
-                        " doesn't touch one of its relative foreground spots, ", relative_pos)
             absolute_pos = min_inclusive(rect) + relative_pos - 1
             if Bplus.Math.is_touching(screen_rect, convert(v2i, absolute_pos))
                 push!(interface.foreground_points_to_draw, InterfaceGpuPointForeground(
@@ -403,9 +405,6 @@ function update_interface!(interface::Interface, delta_seconds::Float32, resolut
             end
         end
         for (relative_pos::v2i, back::CharBackgroundValue) in panel.backgrounds
-            @d8_assert(Bplus.Math.is_touching(rect, relative_pos),
-                        typeof(panel.widget), " panel space of ", rect,
-                        " doesn't touch one of its relative background spots, ", relative_pos)
             absolute_pos = min_inclusive(rect) + relative_pos - 1
             if Bplus.Math.is_touching(screen_rect, convert(v2i, absolute_pos))
                 push!(interface.background_points_to_draw, InterfaceGpuPointBackground(

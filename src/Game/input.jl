@@ -26,37 +26,44 @@
 struct InputMove
     dir::E_PlayerHorizontalDir
     name::String
-    InputMove(dir) = new(dir, "Mission: Move $dir")
+    held_name::String
+    InputMove(dir) = new(dir, "Mission: Move $dir", "Mission: Held: Move $dir")
 end
 struct InputClimb
     dir::E_PlayerVerticalDir
     name::String
-    InputClimb(dir) = new(dir, "Mission: Climb $dir")
+    held_name::String
+    InputClimb(dir) = new(dir, "Mission: Climb $dir", "Mission: Held: Climb $dir")
 end
 struct InputPassOverGap
     dir::E_PlayerTDir
     name::String
-    InputPassOverGap(dir) = new(dir, "Mission: Pass $dir over gap")
+    held_name::String
+    InputPassOverGap(dir) = new(dir, "Mission: Pass $dir over gap", "Mission: Held: Pass $dir over gap")
 end
 struct InputDrill
     dir::Union{E_PlayerHorizontalDir, E_PlayerVerticalDir}
     name::String
-    InputDrill(dir) = new(dir, "Mission: Drill $dir")
+    held_name::String
+    InputDrill(dir) = new(dir, "Mission: Drill $dir", "Mission: Held: Drill $dir")
 end
 struct InputTurn
     dir::E_PlayerHorizontalAngleDir
     name::String
-    InputTurn(dir) = new(dir, "Mission: Turn $dir")
+    held_name::String
+    InputTurn(dir) = new(dir, "Mission: Turn $dir", "Mission: Held: Turn $dir")
 end
 struct InputLook
     dir::E_PlayerVerticalDir
     name::String
-    InputLook(dir) = new(dir, "Mission: Look $dir")
+    held_name::String
+    InputLook(dir) = new(dir, "Mission: Look $dir", "Mission: Held: Look $dir")
 end
 
 InputAction = Union{InputMove, InputClimb, InputPassOverGap, InputDrill,
                     InputTurn, InputLook}
 move_name(i::InputAction) = i.name
+move_held_name(i::InputAction) = i.held_name
 
 
 "Each entry is a set of modifiers that are all equivalent to each other (e.x. left + right shift)"
@@ -162,13 +169,17 @@ const INITIAL_INPUTS = Tuple{InputAction, MissionInputButton}[
         ], Ref(1))
     )...
 ]
-
+get_input_idx(a::InputAction)::Optional{Int} = findfirst(t -> t[1]==a, INITIAL_INPUTS)
 
 function register_mission_inputs()
-    for (action, button) in INITIAL_INPUTS
+    for (action, input) in INITIAL_INPUTS
         create_button(
             move_name(action),
-            button.button
+            input.button
+        )
+        create_button(
+            move_held_name(action),
+            Bplus.Input.ButtonInput(input.button.id, ButtonModes.down)
         )
     end
     for (name, buttons) in INPUT_MODIFIERS
@@ -330,9 +341,8 @@ function update_mission_inputs(mission::Mission)::Nothing
     end
 
     # Precompute the modifier buttons (shift, ctrl, etc).
-    modifiers = ntuple(Val(N_INPUT_MODIFIERS)) do i::Int
-        return any(get_button(name) for (name, _) in INPUT_MODIFIERS)
-    end
+    modifiers = ntuple(i -> get_button(INPUT_MODIFIERS[i][1]),
+                       Val(N_INPUT_MODIFIERS))
 
     # Try executing each action.
     for (action, input_data) in INITIAL_INPUTS

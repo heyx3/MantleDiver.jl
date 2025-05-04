@@ -196,6 +196,13 @@ function CharForegroundValue(c::Char, color = one(UInt8), is_transparent::Bool =
                                length(PUNCTUATION_DENSITY_INDICES)),
             is_transparent
         )
+    elseif c == ' '
+        return CharForegroundValue(
+            convert(UInt8, color),
+            CharShapeType.wide,
+            zero(Float32),
+            is_transparent
+        )
     else
         error("Unsupported char: '", c, "' (", Int(c), " / ", UInt(c), ")")
     end

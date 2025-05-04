@@ -52,10 +52,10 @@ mutable struct Mission
         segment_bounds = vappend(segment_min, segment_max)
         segment_lines = [
             # Outer border
-            SegmentationLine(v2i(0, 0), v2i(player_view_resolution.x, 0)),
-            SegmentationLine(v2i(player_view_resolution.x, 0), v2i(0, player_view_resolution.y)),
-            SegmentationLine(player_view_resolution, v2i(-player_view_resolution.x, 0)),
-            SegmentationLine(v2i(0, player_view_resolution.y), v2i(0, -player_view_resolution.y)),
+            # SegmentationLine(v2i(0, 0), v2i(player_view_resolution.x, 0)),
+            # SegmentationLine(v2i(player_view_resolution.x, 0), v2i(0, player_view_resolution.y)),
+            # SegmentationLine(player_view_resolution, v2i(-player_view_resolution.x, 0)),
+            # SegmentationLine(v2i(0, player_view_resolution.y), v2i(0, -player_view_resolution.y)),
 
             # Inner border
             SegmentationLine(segment_bounds.xy, segment_lengths.zy),
@@ -65,26 +65,103 @@ mutable struct Mission
         ]
 
         # Set up an interface.
+        half_resolution::v2u = player_view_resolution ÷ 2
         player_interface = Interface(Panel[
-            Panel(WidgetRing, player_view_resolution, [
-                WidgetRingLayer(
-                    corners=CharDisplayValue(
-                        foreground = CharForegroundValue('0'),
-                        background = CharBackgroundValue(1, 0.25)
-                    ),
-                    edges=CharDisplayValue(
-                        background=CharBackgroundValue(0, 1)
-                    )
+            Panel(
+                WidgetRing,
+                Box2Du(
+                    min=one(v2u),
+                    size=player_view_resolution
                 ),
-                WidgetRingLayer(
-                    CharDisplayValue(
-                        background = CharBackgroundValue(0, 1)
+                WidgetRingLayer[
+                    WidgetRingLayer(
+                        corners=CharDisplayValue(
+                            foreground = CharForegroundValue('0'),
+                            background = CharBackgroundValue(1, 0.15)
+                        ),
+                        edges_horizontal=CharDisplayValue(
+                            foreground=CharForegroundValue('-'),
+                            background=CharBackgroundValue(1, 0.15)
+                        ),
+                        edges_vertical=CharDisplayValue(
+                            foreground=CharForegroundValue('|'),
+                            background=CharBackgroundValue(1, 0.15)
+                        )
+                    ),
+                    WidgetRingLayer(
+                        CharDisplayValue(
+                            foreground=CharForegroundValue(' '),
+                            background=CharBackgroundValue(0, 1)
+                        )
                     )
-                )
-            ])
-            # Panel(WidgetControlMap, player_view_resolution, [
-            #     ControlWidgetIcon
-            # ])
+                ]
+            ),
+            Panel(
+                WidgetText,
+                "Move",
+                v2i(half_resolution.x - 3, player_view_resolution.y - 1),
+                4,
+                background = nothing,
+                horizontal_alignment = TextAlignment.max
+            ),
+            Panel(
+                WidgetControlMap,
+                player_view_resolution,
+                ControlWidgetIcon[
+                    # The Move actions:
+                    let display = c -> CharDisplayValue(foreground=CharForegroundValue(c, 4),
+                                                        background=CharBackgroundValue(5, 0.65)),
+                        center_top = v2i(half_resolution.x, player_view_resolution.y),
+                        disabled_scale = @f32(0.35)
+                      [
+                        ControlWidgetIcon(
+                            center_top,
+                            display('W'),
+                            move_held_name(InputMove(PlayerHorizontalDir.forward)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(0, -1),
+                            display('S'),
+                            move_held_name(InputMove(PlayerHorizontalDir.backward)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-1, -1),
+                            display('A'),
+                            move_held_name(InputMove(PlayerHorizontalDir.left)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(1, -1),
+                            display('D'),
+                            move_held_name(InputMove(PlayerHorizontalDir.right)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(1, 0),
+                            display('E'),
+                            move_held_name(InputClimb(PlayerVerticalDir.up)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-1, 0),
+                            display('Q'),
+                            move_held_name(InputClimb(PlayerVerticalDir.down)),
+                            disabled_scale,
+                            0, 0
+                        )
+                      ]
+                    end...
+
+                    #TODO: Other controls
+                ]
+            )
         ])
 
         ambient_sound_loop = play_loop(

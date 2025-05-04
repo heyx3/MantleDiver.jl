@@ -31,17 +31,14 @@ struct WidgetRingLayer
     end
 end
 
-"A ring of chars on the boundary of the panel"
+"Rings of chars on the boundary of the panel"
 struct WidgetRing <: AbstractWidget
-    resolution::v2u
+    boundary::Box2Du
     layers::Vector{WidgetRingLayer} # From outside of panel to inside
 end
 
 function widget_init!(r::WidgetRing, panel::Panel)
-    panel.space = Box2Di(
-        min=one(v2i),
-        size=r.resolution
-    )
+    panel.space = convert(Box2Di, r.boundary)
 
     function process(pixel::Vec2, value::CharDisplayValue)
         if exists(value.foreground)

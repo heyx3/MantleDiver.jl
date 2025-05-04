@@ -34,6 +34,7 @@ include("Audio/audio.jl")
 include("InterfaceWidgets/image.jl")
 include("InterfaceWidgets/text.jl")
 include("InterfaceWidgets/ring.jl")
+include("InterfaceWidgets/control_map.jl")
 
 include("Components/Core/services.jl")
 include("Components/Core/transforms.jl")

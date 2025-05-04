@@ -15,7 +15,7 @@ sanitize_widget_text(s::AbstractString) = replace(string(s), "\n\r"=>"\n", "\r\n
 Finds the space covered by a widget; given its alignment, anchor pos, and total size.
 Operates on a single component.
 "
-function widget_anchored_space(alignment::E_TextAlignment, anchor_pos::Integer, size::Integer)::Integer
+function widget_anchored_space(alignment::E_TextAlignment, anchor_pos::Integer, size::Integer)::Interval
     return convert(Interval{promote_type(typeof(anchor_pos), typeof(size))},
         if alignment == TextAlignment.min
             Interval(min=anchor_pos, size=size)
@@ -40,7 +40,7 @@ Anchored based on its alignment, for example
     text::String
     color::UInt8
     anchor_point::v2i
-    background::CharBackgroundValue = CharBackgroundValue(
+    background::Optional{CharBackgroundValue} = CharBackgroundValue(
         0, 0.0
     )
     background_covers_whole_space::Bool = true # If true, then it covers the entire rectangular bounds of the label.
@@ -49,10 +49,10 @@ Anchored based on its alignment, for example
     horizontal_alignment::E_TextAlignment = TextAlignment.min
     vertical_alignment::E_TextAlignment = TextAlignment.centered
 end
-WidgetText(text, anchor_point, color; kw...) = WidgetText(
+WidgetText(text, anchor_point, color; kw...) = WidgetText(;
     text=sanitize_widget_text(text),
-    anchor_point=convert(v2i, anchor_point),
     color=convert(UInt8, color),
+    anchor_point=convert(v2i, anchor_point),
     kw...
 )
 
@@ -90,7 +90,7 @@ function widget_init!(w_text::WidgetText, panel::Panel)
 
     # Write the lines into the widget's buffer.
     width = size(panel.space).x
-    if (w_text.background_covers_whole_space)
+    if exists(w_text.background) && w_text.background_covers_whole_space
         for relative_pos in Int32(1):size(panel.space)
             panel.backgrounds[relative_pos] = w_text.background
         end
@@ -114,7 +114,7 @@ function widget_init!(w_text::WidgetText, panel::Panel)
             if char != ' '
                 panel.foregrounds[relative_pos] = CharForegroundValue(char, w_text.color)
             end
-            if !w_text.background_covers_whole_space
+            if exists(w_text.background) && !w_text.background_covers_whole_space
                 panel.backgrounds[relative_pos] = w_text.background
             end
         end
