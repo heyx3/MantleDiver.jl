@@ -1,7 +1,7 @@
 name = "Drill8"
 uuid = "18641f14-447b-44e5-980a-0bc5e35389b7"
 authors = ["William Manning <manning.w27@gmail.com>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 Bplus = "c71c5366-3533-40c3-bcf3-6383cd1eb1eb"
@@ -20,5 +20,5 @@ Setfield = "efcf1570-3423-57d1-acb7-fd33fddbac46"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
-Bplus = "0.2.0"
-julia = "1.9"
+Bplus = "0.3.0"
+julia = "1.11"
