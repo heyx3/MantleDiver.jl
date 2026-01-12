@@ -1,5 +1,5 @@
 #=  Command-line arguments:
-      * -d or --debug to enable asserts
+      * -d or --debug for a debug build
 =#
 
 using Pkg

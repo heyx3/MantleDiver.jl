@@ -212,7 +212,8 @@ end
 
     function TICK()
         movement = zero(v3f)
-        @set! movement[grid_axis(this.dir)] = this.progress_normalized *
+        @set! movement[grid_axis(this.dir)] = curve_eval(DRILL_PROGRESS_CURVE, this.progress_normalized,
+                                                         tuple(this.rng_seed)) *
                                               grid_sign(this.dir)
 
         this.pos_component.pos = this.original_pos + movement

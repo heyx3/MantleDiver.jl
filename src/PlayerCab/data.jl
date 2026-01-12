@@ -446,7 +446,20 @@ const TURN_INCREMENT_DEG = @f32(30)
 ########################
 #  Drilling simulation
 
-
 const DRILL_DURATION_SECONDS = @f32(2)
-
 const DRILL_SHAKE_STRENGTH = @f32(1)
+
+const DRILL_PROGRESS_CURVE = Curve{Float32}(
+    CurveKey(v2f(0, 0),
+             CurveLinearSlope()),
+    CurveKey(v2f(0.2, 0.35),
+             CurveExponentialSlope(3.0)),
+    CurveKey(v2f(0.8, 0.9),
+             CurveLinearSlope()),
+    CurveKey(v2f(1.0, 1.0)),
+
+    perlin_settings=CurvePerlin(
+        0.025, 0.01,
+        0.1, 2.0
+    )
+)

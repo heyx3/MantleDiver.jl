@@ -1,6 +1,6 @@
 module Drill8
 
-IS_PRECOMPILING::Bool = true # Set to false at the bottom of this module
+IS_PRECOMPILING::Bool = true # Gets set to false at the bottom of this file
 
 using Random, Setfield
 
