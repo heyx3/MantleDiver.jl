@@ -452,10 +452,10 @@ const DRILL_SHAKE_STRENGTH = @f32(1)
 const DRILL_PROGRESS_CURVE = Curve{Float32}(
     CurveKey(v2f(0, 0),
              CurveLinearSlope()),
-    CurveKey(v2f(0.2, 0.35),
-             CurveExponentialSlope(3.0)),
-    CurveKey(v2f(0.8, 0.9),
+    CurveKey(v2f(0.8, 0.15),
              CurveLinearSlope()),
+    CurveKey(v2f(0.9, 0.95),
+             CurveExponentialSlope(0.8)),
     CurveKey(v2f(1.0, 1.0)),
 
     perlin_settings=CurvePerlin(

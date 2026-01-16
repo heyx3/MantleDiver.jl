@@ -33,7 +33,6 @@ const UBO_INDEX_CAM_DATA = 3
 const UBO_NAME_CAM_DATA = "CameraDataBuffer"
 const UBO_CODE_CAM_DATA = """
     layout(std140, binding=$(UBO_INDEX_CAM_DATA-1)) uniform $UBO_NAME_CAM_DATA {
-
         $(glsl_decl(CameraDataBuffer))
     } u_world_cam;
 """

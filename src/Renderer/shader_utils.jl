@@ -13,7 +13,7 @@ const SHADER_CODE_UTILS = """
     //   * scaler = 0.5
     //   * bias = 0.5
     //   * oscillation between 0 and 3
-    //   * phase between 0 and 1 
+    //   * phase between 0 and 1
     #define PROCEDURAL_GRADIENT(t, bias, scaler, oscillation, phase) \
         clamp(((bias) + ((scaler) * cos(PI_2 * (((oscillation) * (t)) + (phase))))), \
               0.0, 1.0)
@@ -26,14 +26,16 @@ const SHADER_CODE_UTILS = """
     #define SATURATE(x) clamp(x, 0.0, 1.0)
     #define SHARPEN(t) smoothstep(0.0, 1.0, t)
     #define SHARPENER(t) SMOOTHERSTEP(t)
-    
+
     #define RAND_IN_ARRAY(array, t) array[int(mix(0.0, float(array.length()) - 0.00001, t))]
-    
+
     //A higher-quality smoothstep(), with a zero second-derivative at the edges.
     #define SMOOTHERSTEP(t) clamp(t * t * t * (t * (t*6.0 - 15.0) + 10.0), \
                                 0.0, 1.0)
 
     //Returns a value that increases towards 1 as it gets closer to some target.
+    //Thickness is the size of the transition from 0 to 1, and must be > 0.
+    //Dropoff is an exponent to dim the growth from 0 to 1.
     float border(float x, float target, float thickness, float dropoff)
     {
         float dist = abs(x - target);
@@ -51,7 +53,7 @@ const SHADER_CODE_UTILS = """
     float realDist(float efficientDist, vec2 posType) { return sqrt(efficientDist); }
     float realDist(float efficientDist, vec3 posType) { return sqrt(efficientDist); }
     float realDist(float efficientDist, vec4 posType) { return sqrt(efficientDist); }
-    
+
     float sumComponents(float f) { return f; }
     float sumComponents(vec2 v) { return v.x + v.y; }
     float sumComponents(vec3 v) { return v.x + v.y + v.z; }
@@ -425,14 +427,14 @@ const SHADER_CODE_UTILS = """
     bool getWorleyPoint(float cell, float chanceOfPoint, float seed, out float pos)
     {
         vec2 rng = hashTo2(vec2(cell * 450.0, seed)).xy;
-        
+
         pos = cell + rng.x;
         return (rng.y < chanceOfPoint);
     }
     bool getWorleyPoint(vec2 cell, float chanceOfPoint, float seed, out vec2 pos)
     {
         vec3 rng = hashTo3(vec3(cell, seed) * 450.0).xyz;
-        
+
         pos = cell + rng.xy;
         return (rng.z < chanceOfPoint);
     }
@@ -467,17 +469,17 @@ const SHADER_CODE_UTILS = """
                     out int nPoints, out vec2 points[9])
     {
         IMPL_WORLEY_START(vec2);
-        
+
         IMPL_WORLEY_POINT(xMin);
         IMPL_WORLEY_POINT(xCenter);
         IMPL_WORLEY_POINT(xMax);
-        
+
         IMPL_WORLEY_POINT(vec2(xMin.x, xCenter.y));
         IMPL_WORLEY_POINT(vec2(xMin.x, xMax.y));
-        
+
         IMPL_WORLEY_POINT(vec2(xCenter.x, xMin.y));
         IMPL_WORLEY_POINT(vec2(xCenter.x, xMax.y));
-        
+
         IMPL_WORLEY_POINT(vec2(xMax.x, xMin.y));
         IMPL_WORLEY_POINT(vec2(xMax.x, xCenter.y));
     }

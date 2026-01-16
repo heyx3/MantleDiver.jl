@@ -240,6 +240,7 @@ end
                 out vec3 fIn_worldPos;
                 out vec2 fIn_uv;
                 out flat vec3 fIn_normal;
+                out flat ivec3 fIn_gridCell;
 
                 void main() {
                     if (gl_PrimitiveIDIn >= u_rock_chunk.count)
@@ -256,6 +257,7 @@ end
                         fIn_worldPos = center + offset.offsetSwizzle; \\
                         fIn_uv = vec2 uv; \\
                         fIn_normal = vec3 normal; \\
+                        fIn_gridCell = rock.world_grid_pos.xyz; \\
                         gl_Position = u_world_cam.matrix_view_projection * vec4(fIn_worldPos, 1); \\
                         EmitVertex(); \\
                     }
@@ -275,13 +277,18 @@ end
                 }
 
             #START_FRAGMENT
+                $UBO_CODE_CHAR_RENDERING
+                $UBO_CODE_CAM_DATA
+                uniform float u_gameSeconds;
+
+                $SHADER_CODE_UTILS
+
                 in vec3 fIn_worldPos;
                 in vec2 fIn_uv;
                 in flat vec3 fIn_normal;
+                in flat ivec3 fIn_gridCell;
 
-                $UBO_CODE_CHAR_RENDERING
                 $SHADER_CODE_DIRECT_CHAR_OUTPUT
-                $SHADER_CODE_UTILS
 
                 #define N_MINERALS $N_MINERALS
                 #define N_MINERALS_AND_ROCK $(N_MINERALS + 1)
@@ -300,7 +307,8 @@ end
                     unpackRockDensities(rock.packed_densities, mineralDensities);
 
                     //Call into the surface shader specified in the text file.
-                    MaterialSurface surf = getRockMaterial(fIn_worldPos, fIn_uv, fIn_normal, mineralDensities);
+                    MaterialSurface surf = getRockMaterial(fIn_worldPos, fIn_uv, fIn_normal, fIn_gridCell,
+                                                           mineralDensities);
 
                     writeFramebuffer(surf);
                 }
@@ -324,6 +332,7 @@ end
     end
 
     function render(data::WorldRenderData)
+        GL.set_uniform(this.shader, "u_gameSeconds", world.elapsed_seconds)
         for (key, (cpu, gpu)) in this.rock_data_buffers
             GL.set_uniform_block(gpu, UBO_INDEX_ROCK_DATA)
             GL.render_mesh(
