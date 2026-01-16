@@ -241,7 +241,41 @@ mutable struct Mission
                             nothing,
                             disabled_scale,
                             1, 0
-                        )
+                        ),
+
+                        ControlWidgetIcon(
+                            center_top + v2i(-7, -1),
+                            display_val(' ') => display_val('D'),
+                            nothing, disabled_scale, 1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-6, -1),
+                            display_val('L') => display_val('r'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-5, -1),
+                            display_val('o') => display_val('i'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-4, -1),
+                            display_val('o') => display_val('l'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-3, -1),
+                            display_val('k') => display_val('l'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
                       ]
                     end...
 
