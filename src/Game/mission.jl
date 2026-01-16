@@ -109,52 +109,138 @@ mutable struct Mission
                 player_view_resolution,
                 ControlWidgetIcon[
                     # The Move actions:
-                    let display = c -> CharDisplayValue(foreground=CharForegroundValue(c, 4),
-                                                        background=CharBackgroundValue(5, 0.65)),
+                    let display_val = c -> CharDisplayValue(foreground=CharForegroundValue(c, 4),
+                                                            background=CharBackgroundValue(5, 0.65)),
                         center_top = v2i(half_resolution.x, player_view_resolution.y),
                         disabled_scale = @f32(0.35)
                       [
                         ControlWidgetIcon(
                             center_top,
-                            display('W'),
+                            display_val('W'),
                             move_held_name(InputMove(PlayerHorizontalDir.forward)),
                             disabled_scale,
                             0, 0
                         ),
                         ControlWidgetIcon(
                             center_top + v2i(0, -1),
-                            display('S'),
+                            display_val('S'),
                             move_held_name(InputMove(PlayerHorizontalDir.backward)),
                             disabled_scale,
                             0, 0
                         ),
                         ControlWidgetIcon(
                             center_top + v2i(-1, -1),
-                            display('A'),
+                            display_val('A'),
                             move_held_name(InputMove(PlayerHorizontalDir.left)),
                             disabled_scale,
                             0, 0
                         ),
                         ControlWidgetIcon(
                             center_top + v2i(1, -1),
-                            display('D'),
+                            display_val('D'),
                             move_held_name(InputMove(PlayerHorizontalDir.right)),
                             disabled_scale,
                             0, 0
                         ),
                         ControlWidgetIcon(
                             center_top + v2i(1, 0),
-                            display('E'),
+                            display_val('E'),
                             move_held_name(InputClimb(PlayerVerticalDir.up)),
                             disabled_scale,
                             0, 0
                         ),
                         ControlWidgetIcon(
                             center_top + v2i(-1, 0),
-                            display('Q'),
+                            display_val('Q'),
                             move_held_name(InputClimb(PlayerVerticalDir.down)),
                             disabled_scale,
                             0, 0
+                        )
+                      ]
+                    end...,
+                    # The Look/Drill actions:
+                    let display_val = c -> CharDisplayValue(foreground=CharForegroundValue(c, 6),
+                                                            background=CharBackgroundValue(5, 0.65)),
+                        center_top = v2i(((player_view_resolution.x * 3) + 3) ÷ 4, player_view_resolution.y),
+                        disabled_scale = @f32(0.35)
+                      [
+                        ControlWidgetIcon(
+                            center_top,
+                            display_val('I'),
+                            move_held_name(InputLook(PlayerVerticalDir.up)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(0, -1),
+                            display_val('K'),
+                            move_held_name(InputLook(PlayerVerticalDir.down)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-1, -1),
+                            display_val('J'),
+                            move_held_name(InputTurn(PlayerHorizontalAngleDir.left)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(1, -1),
+                            display_val('L'),
+                            move_held_name(InputTurn(PlayerHorizontalAngleDir.right)),
+                            disabled_scale,
+                            0, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(-1, 0),
+                            display_val('U'),
+                            move_held_name(InputDrill(PlayerVerticalDir.up)),
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(1, 0),
+                            display_val('O'),
+                            move_held_name(InputDrill(PlayerVerticalDir.down)),
+                            disabled_scale,
+                            1, 0
+                        ),
+
+                        ControlWidgetIcon(
+                            center_top + v2i(3, -1),
+                            display_val('S'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(4, -1),
+                            display_val('H'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(5, -1),
+                            display_val('I'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(6, -1),
+                            display_val('F'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
+                        ),
+                        ControlWidgetIcon(
+                            center_top + v2i(7, -1),
+                            display_val('T'),
+                            nothing,
+                            disabled_scale,
+                            1, 0
                         )
                       ]
                     end...

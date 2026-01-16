@@ -2,7 +2,8 @@ struct ControlWidgetIcon
     relative_pos::v2i
     icon::CharDisplayValue
 
-    input_name::String # ID in the B+ Input service for holding the control down
+    input_name::Optional{String} # ID in the B+ Input service for holding the control down;
+                                 #  `nothing` if only the modifier key is needed
     disabled_density_scale::Float32
 
     modifier_idx::Int # 0 if no modifier needed
@@ -31,7 +32,11 @@ function widget_tick!(cm::WidgetControlMap, panel::Panel, delta_seconds::Float32
         if exists(background)
             #TODO: Modifier should be false if idx is 0 and ANY modifier is pressed
             modifier::Bool = (control.modifier_idx < 1) || get_button(INPUT_MODIFIERS[control.modifier_idx][1])
-            key::Bool = get_button(control.input_name)
+            key::Bool = if isnothing(control.input_name)
+                modifier
+            else
+                get_button(control.input_name)
+            end
 
             density = background.density *
                 if modifier && !key
