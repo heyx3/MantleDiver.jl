@@ -5,8 +5,10 @@ However, for ubiquitous things like rocks, this is very inefficient.
 So you can also write a "bulk" grid entity which manages an unlimited set of simple objects.
 
 Only one bulk component can exist for each type of grid object.
+
+Bulk components must have a DrillResponse component (not officially required because then it screws up initialization order).
 """
-@component BulkElements{T} {abstract} {worldSingleton} {require: DrillResponse} begin
+@component BulkElements{T} {abstract} {worldSingleton} begin
     lookup::Dict{v3i, T}
 
     # Callbacks should have the signature (v3i, T) -> Nothing

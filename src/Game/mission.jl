@@ -30,7 +30,7 @@ mutable struct Mission
                                       rand(UInt32),
                                       PLAYER_START_POS,
                                       5, 0.39,
-                                      3, 0.28, 2.4)
+                                      3, 0.48, 2.4)
             get_component(entity, GridManager)
         end
         services = let entity = add_entity(world)
@@ -67,8 +67,8 @@ mutable struct Mission
         # Set up an interface.
         half_resolution::v2u = player_view_resolution ÷ 2
         player_interface = Interface(Panel[
-            Panel(
-                WidgetRing,
+            # Outer rings
+            Panel(WidgetRing,
                 Box2Du(
                     min=one(v2u),
                     size=player_view_resolution
@@ -96,16 +96,18 @@ mutable struct Mission
                     )
                 ]
             ),
-            Panel(
-                WidgetText,
+
+            # Move label
+            Panel(WidgetText,
                 "Move",
                 v2i(half_resolution.x - 3, player_view_resolution.y - 1),
                 4,
                 background = nothing,
                 horizontal_alignment = TextAlignment.max
             ),
-            Panel(
-                WidgetControlMap,
+
+            # Control indicators
+            Panel(WidgetControlMap,
                 player_view_resolution,
                 ControlWidgetIcon[
                     # The Move actions:
@@ -278,10 +280,23 @@ mutable struct Mission
                         ),
                       ]
                     end...
-
-                    #TODO: Other controls
                 ]
-            )
+            ),
+
+            # Inventory indicators
+            Panel(WidgetText,
+                "I",
+                v2i(player_view_resolution.x - 1, player_view_resolution.y - 10),
+                1,
+                background=CharBackgroundValue(0, 0)
+            ),
+            map(enumerate(Mineral.instances())) do (i, m)
+                Panel(WidgetInventoryMap,
+                    m,
+                    v2i(player_view_resolution.x, player_view_resolution.y - 10 - i),
+                    cab
+                )
+            end...
         ])
 
         ambient_sound_loop = play_loop(

@@ -126,7 +126,7 @@ function make_rock(world::World, grid_pos::Vec3{<:Integer}, data::Rock;
             en = add_entity(world)
             add_component(en, DebugGuiVisuals_Rocks)
             add_component(en, Renderable_Rock)
-
+            add_component(en, RockDrillResponse)
             get_component(en, RockBulkElements)
         end
     end

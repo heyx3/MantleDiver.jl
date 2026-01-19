@@ -34,7 +34,6 @@ include("Audio/audio.jl")
 include("InterfaceWidgets/image.jl")
 include("InterfaceWidgets/text.jl")
 include("InterfaceWidgets/ring.jl")
-include("InterfaceWidgets/control_map.jl")
 
 include("Components/Core/services.jl")
 include("Components/Core/transforms.jl")
@@ -50,6 +49,9 @@ include("Components/GridObjects/rock.jl")
 include("PlayerCab/data.jl")
 include("PlayerCab/maneuvers.jl")
 include("PlayerCab/rendering.jl")
+
+include("InterfaceWidgets/control_map.jl")
+include("InterfaceWidgets/inventory_map.jl")
 
 include("Game/entity_prototypes.jl")
 include("Game/level_generators.jl")

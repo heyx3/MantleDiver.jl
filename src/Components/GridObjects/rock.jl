@@ -13,9 +13,19 @@
 )
 const N_MINERALS = length(Mineral.instances())
 
+"Defines the overall representation of each mineral, for UI and shader purposes"
+const MINERAL_PALETTE = Dict{E_Mineral, Tuple{E_CharShapeType, Int}}(
+    Mineral.storage   => (CharShapeType.block, 6),
+    Mineral.hull      => (CharShapeType.block, 2),
+    Mineral.drill     => (CharShapeType.unusual, 6),
+    Mineral.specials  => (CharShapeType.unusual, 7),
+    Mineral.sensors   => (CharShapeType.tall, 4),
+    Mineral.maneuvers => (CharShapeType.wide, 4)
+)
+
 "Some per-mineral data, stored in an immutable array"
 const PerMineral{T} = Vec{N_MINERALS, T}
-@inline getindex(pm::PerMineral, m::E_Mineral) = pm[Int32(m)]
+@inline Base.getindex(pm::PerMineral, m::E_Mineral) = pm[Int32(m) + one(Int32)]
 
 "Per-rock data, stored in a bulk grid entity"
 struct Rock
@@ -38,7 +48,17 @@ end
 
 "A rock's response to being drilled"
 @component RockDrillResponse <: DrillResponse {require: RockBulkElements} begin
-    # Default behavior is fine for now
+    bulk::RockBulkElements
+    function CONSTRUCT()
+        SUPER()
+        this.bulk = get_component(entity, RockBulkElements)
+    end
+    # Give the driller the minerals in this rock.
+    function finish_drilling(voxel_pos::v3i, cab_entity::Entity)
+        cab = get_component(cab_entity, Cab)
+        cab.inventory = cab.inventory + bulk_data_at(this.bulk, voxel_pos).minerals
+        SUPER()
+    end
 end
 
 
@@ -57,7 +77,7 @@ const MINERAL_DEBUG_COLORS = PerMineral{vRGBf}(
 const MINERAL_MAX_DEBUG_COLOR_POINT = @f32(1)
 const MINERAL_DEBUG_COLOR_DROPOFF = @f32(1.7)
 
-"Draws the bulk of rocks"
+"Draws the bulk of rocks in debug views"
 @component DebugGuiVisuals_Rocks <: DebugGuiVisuals {require: RockBulkElements} begin
     bulk::RockBulkElements
     function CONSTRUCT()
@@ -294,6 +314,8 @@ end
                 #define N_MINERALS_AND_ROCK $(N_MINERALS + 1)
                 $(map(Mineral.instances()) do mineral
                     return """#define MINERAL_$mineral $(Int(mineral))
+                    #define MINERAL_SHAPE_$mineral SHAPE_$(MINERAL_PALETTE[mineral][1])
+                    #define MINERAL_COLOR_$mineral $(MINERAL_PALETTE[mineral][2])
                 """ end...)
                 #line 0
 

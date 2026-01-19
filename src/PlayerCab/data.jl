@@ -32,12 +32,15 @@ ECS.@component Cab {entitySingleton} {require: ContinuousPosition, WorldOrientat
     loadout::PlayerLoadout
     pos_component::ContinuousPosition
     rot_component::WorldOrientation
+    inventory::PerMineral{Float32}
 
-    function CONSTRUCT(initial_loadout::PlayerLoadout)
+    function CONSTRUCT(initial_loadout::PlayerLoadout,
+                       initial_inventory::PerMineral{Float32} = zero(PerMineral{Float32}))
         this.is_bracing = false
         this.loadout = copy(initial_loadout)
         this.pos_component = get_component(entity, ContinuousPosition)
         this.rot_component = get_component(entity, WorldOrientation)
+        this.inventory = initial_inventory
     end
     function DESTRUCT(is_entity_dying::Bool)
         if !is_entity_dying

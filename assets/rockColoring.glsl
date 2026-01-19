@@ -3,6 +3,8 @@
         * N_MINERALS_AND_ROCK
         * MINERAL_[X] (all mineral types, 0-based)
         * SHAPE_[X] (all char shape types, 0-based)
+        * MINERAL_SHAPE_[X] (the official shape type for each mineral)
+        * MINERAL_COLOR_[X] (the official color for each mineral)
         * u_gameSeconds
         * The various UBO's defined in the project (e.g. camera, framebuffer)
         * Our shader utilities code (e.g. perlin noise)
@@ -49,34 +51,34 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
     #define CHATTED(normal, ifChat, ifChatFlipped) (chatMask ? (chatFlip ? (ifChatFlipped) : (ifChat)) : (normal))
 
     mOuts[MINERAL_storage] = defineMineralSurface(
-        6, SHAPE_block,
+        MINERAL_COLOR_storage, MINERAL_SHAPE_storage,
         NOISED(1,   0.23, 0.43,   1.0),
-        6, 0.1
+        MINERAL_COLOR_storage, 0.1
     );
     mOuts[MINERAL_hull] = defineMineralSurface(
-        CHATTED(2, 1, 0), SHAPE_block,
+        CHATTED(MINERAL_COLOR_hull, 1, 0), MINERAL_SHAPE_hull,
         NOISED(1,   0.1, 0.7,   0.3),
         6, 0.1
     );
     mOuts[MINERAL_drill] = defineMineralSurface(
-        6, SHAPE_unusual,
+        MINERAL_COLOR_drill, MINERAL_SHAPE_drill,
         NOISED(1,    0.2, 0.3,   4.0),
         1, NOISED(2,    0.05, 0.3,     5.0)
     );
     mOuts[MINERAL_specials] = defineMineralSurface(
-        CHATTED(7, 0, 1), SHAPE_unusual,
+        CHATTED(MINERAL_COLOR_specials, 0, 1), MINERAL_SHAPE_specials,
         NOISED(1,    0.8, 1,   6.0),
         1, 0.0
     );
     mOuts[MINERAL_sensors] = defineMineralSurface(
-        CHATTED(4, 0, 1), SHAPE_tall,
+        CHATTED(MINERAL_COLOR_sensors, 0, 1), MINERAL_SHAPE_sensors,
         0.75,
         1, 0.0
     );
     mOuts[MINERAL_maneuvers] = defineMineralSurface(
-        CHATTED(4, 1, 0), SHAPE_wide,
+        CHATTED(MINERAL_COLOR_maneuvers, 1, 0), MINERAL_SHAPE_maneuvers,
         0.275,
-        4, NOISED(2,    0.05, 0.7,     5.0)
+        MINERAL_COLOR_maneuvers, NOISED(2,    0.05, 0.7,     5.0)
     );
 
     //Plain rock:
@@ -108,6 +110,7 @@ MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, ivec3 gridC
 
     //Pick the surface data of the densest mineral in this rock.
     int densestI = 0;
+    mineralDensitiesThenRock[N_MINERALS] = 0.0001; //Make plain rock the last resort
     for (int i = 1; i < N_MINERALS_AND_ROCK; ++i)
         if (mineralDensitiesThenRock[i] > mineralDensitiesThenRock[densestI])
             densestI = i;

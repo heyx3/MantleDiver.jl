@@ -111,6 +111,11 @@ const ASCII_CHARS_BY_SHAPE_THEN_DENSITY = Dict(
         '`', '~', '|'
     ]
 )
+function get_char_by_density(group::E_CharShapeType, density::Float32)
+    chars = ASCII_CHARS_BY_SHAPE_THEN_DENSITY[group]
+    raw_idx = 1 + round(Int, density * length(group))
+    return group[clamp(raw_idx, 1, length(group))]
+end
 
 "Maps each punctuation character to its index in the `DIRECT_punctuation` char shape"
 const PUNCTUATION_DENSITY_INDICES = Dict(
