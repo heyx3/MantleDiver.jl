@@ -2,7 +2,7 @@
 
 const FOREGROUND_FORMAT = SimpleFormat(
     FormatTypes.uint,
-    SimpleFormatComponents.RG,
+    SimpleFormatComponents.RGB,
     SimpleFormatBitDepths.B8
 )
 const BACKGROUND_FORMAT = SimpleFormat(
@@ -26,6 +26,7 @@ const DENSITY_BITS = UInt8(7)
 const DENSITY_PACKED_MAX = (UInt8(1) << DENSITY_BITS) - UInt8(1)
 const DENSITY_BIT_MASK = DENSITY_PACKED_MAX
 
+
 "Defines GLSL utilities for packing and unpacking framebuffer data"
 const SHADER_CODE_FRAMEBUFFER_PACKING = """
     #ifndef FRAMEBUFFER_PACKING_H
@@ -44,6 +45,8 @@ const SHADER_CODE_FRAMEBUFFER_PACKING = """
         float backgroundDensity;
 
         bool isTransparent;
+
+        float foregroundShine;
     };
 
     /////////////////////////////////////////
@@ -83,15 +86,28 @@ const SHADER_CODE_FRAMEBUFFER_PACKING = """
                 float($(Int(DENSITY_PACKED_MAX)));
     }
 
+    uint packShine(float value)
+    {
+        float uncurved = (value > 1.0) ? sqrt(value) : value;
+        float unscaled = uncurved * 4.0;
+        return uint(ceil(unscaled));
+    }
+    float unpackShine(uint value)
+    {
+        float scaled = float(value) / 4.0;
+        return scaled * max(scaled, 1.0);
+    }
+
     ////////////////////////////////////////////////////////
 
-    uvec2 packForeground(MaterialSurface surf)
+    uvec3 packForeground(MaterialSurface surf)
     {
-        return uvec2(
+        return uvec3(
             packShape(surf.foregroundShape) |
                 packColor(surf.foregroundColor),
             packDensity(surf.foregroundDensity) |
-                ((surf.isTransparent ? 1 : 0) << $(Int(DENSITY_BITS)))
+                ((surf.isTransparent ? 1 : 0) << $(Int(DENSITY_BITS))),
+            packShine(surf.foregroundShine)
         );
     }
     uint packBackground(MaterialSurface surf, bool isPartiallyOccluded)
@@ -117,7 +133,7 @@ const SHADER_CODE_FRAMEBUFFER_PACKING = """
     MaterialSurface unpackFramebuffer(uvec4 foregroundSampleRGBA, uvec4 backgroundSampleRGBA)
     {
         MaterialSurface ms;
-        uvec2 foregroundSample = foregroundSampleRGBA.xy;
+        uvec3 foregroundSample = foregroundSampleRGBA.xyz;
         uint backgroundSample = backgroundSampleRGBA.x;
 
         ms.foregroundShape = unpackShape(foregroundSample.x);
@@ -127,6 +143,8 @@ const SHADER_CODE_FRAMEBUFFER_PACKING = """
 
         ms.backgroundColor = unpackColor(backgroundSample);
         ms.backgroundDensity = unpackDensity(backgroundSample >> $(Int(COLOR_BITS)));
+
+        ms.foregroundShine = unpackShine(foregroundSample.z);
 
         return ms;
     }
@@ -163,7 +181,7 @@ const UBO_CODE_FRAMEBUFFER_WRITE_DATA = """
         //Pack the surface data appropriately.
         fOut_packed = uvec4(0, 0, 0, 0);
         if (u_output.foreground_mode)
-            fOut_packed.xy = packForeground(surf);
+            fOut_packed.xyz = packForeground(surf);
         else
             fOut_packed.x = packBackground(surf, !isFrontmostSurface);
     }
@@ -174,7 +192,7 @@ const UBO_CODE_FRAMEBUFFER_WRITE_DATA = """
 GL.@std140 struct FrameBufferReadData
     tex_foreground::UInt64
     tex_background::UInt64
-    char_grid_resolution::v2u # resolution of foreground and background textures
+    resolution::v2u # resolution of foreground and background textures
 end
 const UBO_INDEX_FRAMEBUFFER_READ_DATA = 2
 
@@ -195,7 +213,7 @@ const UBO_CODE_FRAMEBUFFER_READ_DATA = """
             textureLod(usampler2D(u_framebuffer.tex_background), uv, 0.0)
         );
 
-        vec2 charGridCellF = uv * u_framebuffer.char_grid_resolution;
+        vec2 charGridCellF = uv * u_framebuffer.resolution;
         outCharUV = fract(charGridCellF);
     }
 """

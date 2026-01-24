@@ -323,7 +323,7 @@ end
                 $shader_file_str
 
                 void main() {
-                    //Get the density of each mineral.
+                    //Get the density of each mineral present in this rock.
                     RockDataBufferElement rock = u_rock_chunk.elements[gl_PrimitiveID];
                     float mineralDensities[N_MINERALS_AND_ROCK];
                     unpackRockDensities(rock.packed_densities, mineralDensities);

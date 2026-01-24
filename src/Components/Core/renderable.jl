@@ -10,6 +10,7 @@ GL.@std140 struct CameraDataBuffer
 
     # 3D vectors have a 4th component just to avoid padding issues.
     # It will be set to 0 or 1 as appropriate for matrix math.
+    #TODO: Swap back to v3f now
     cam_pos::v4f
     cam_forward::v4f
     cam_up::v4f

@@ -312,7 +312,7 @@ const SHADER_CODE_RENDER_INTERFACE = """
         #endif
 
         out uvec2 gIn_Cell;
-        out uvec2 gIn_PackedFramebufferData;
+        out uvec3 gIn_PackedFramebufferData;
 
         void main() {
             gl_Position = vec4(0, 0, 0, 1);
@@ -331,7 +331,7 @@ const SHADER_CODE_RENDER_INTERFACE = """
                 surf.foregroundShape = vIn_Shape;
                 gIn_PackedFramebufferData = packForeground(surf);
             #else
-                gIn_PackedFramebufferData = uvec2(packBackground(surf, false), 0);
+                gIn_PackedFramebufferData = uvec3(packBackground(surf, false), 0, 0);
             #endif
         }
 
@@ -340,11 +340,11 @@ const SHADER_CODE_RENDER_INTERFACE = """
         layout(triangle_strip, max_vertices=4) out;
 
         in uvec2 gIn_Cell[1];
-        in uvec2 gIn_PackedFramebufferData[1];
+        in uvec3 gIn_PackedFramebufferData[1];
 
         uniform uvec2 u_FramebufferSize;
 
-        out flat uvec2 fIn_PackedFramebufferData;
+        out flat uvec3 fIn_PackedFramebufferData;
 
         void main() {
             vec2 texel = 1.0 / vec2(u_FramebufferSize);
@@ -372,11 +372,11 @@ const SHADER_CODE_RENDER_INTERFACE = """
     #START_FRAGMENT
         $UBO_CODE_FRAMEBUFFER_WRITE_DATA
 
-        in flat uvec2 fIn_PackedFramebufferData;
+        in flat uvec3 fIn_PackedFramebufferData;
         void main() {
             //Instead of calling 'writeFramebuffer()',
             //    we've already packed the data ourselves in the vertex shader.
-            fOut_packed = uvec4(fIn_PackedFramebufferData, 0, 0);
+            fOut_packed = uvec4(fIn_PackedFramebufferData, 0);
         }
 """
 

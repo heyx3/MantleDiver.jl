@@ -3,6 +3,8 @@ const ASSETS_FOLDER = "assets"
 const FILE_NAME_FONT = "JetBrainsMono-Bold.ttf"
 const FILE_NAME_PALETTE = "Palette.png"
 
+const CHAR_PIXEL_SIZE = 64
+
 
 Bplus.@bp_enum(FramebufferRenderMode,
     regular,
@@ -43,6 +45,8 @@ mutable struct Assets
     chars_ubo_data::CharRenderAssetBuffer
     chars_ubo::GL.Buffer
 
+    shader_bloom_blur::Program
+
     # A tiny depth texture, cleared to max depth.
     blank_depth_tex::Texture
 
@@ -57,7 +61,6 @@ function Assets()
 
     # Assign each char a part of the texture atlas.
     # For now, separate them horizontally with a small border.
-    CHAR_PIXEL_SIZE::Int = 64
     BORDER_SIZE::Int = 1
     CHAR_ATLAS_SIZE = v2i(
         (CHAR_PIXEL_SIZE * length(all_chars)) +
@@ -268,6 +271,7 @@ function Assets()
         #START_FRAGMENT
             in vec2 vOut_uv;
             out vec4 fOut_color;
+            out vec4 fOut_bloomInit;
 
             $UBO_CODE_FRAMEBUFFER_READ_DATA
             $UBO_CODE_CHAR_RENDERING
@@ -277,14 +281,28 @@ function Assets()
             $SHADER_CODE_UTILS
 
             void main() {
-                fOut_color = vec4(1, 0, 1, 1);
-                #define PICK_OUTPUT(colorRGB) { fOut_color.rgb = vec3(colorRGB); return; }
-
                 //Read data from the framebuffer.
                 MaterialSurface surface;
                 vec2 charUV;
                 readFramebuffer(vOut_uv, surface, charUV);
-                if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.foreground_shape)))
+
+                //Look up the intended color for the char.
+                vec3 foregroundColor = readColor(surface.foregroundColor);
+                vec3 backgroundColor = readColor(surface.backgroundColor) *
+                                         surface.backgroundDensity;
+                float charA = readChar(surface.foregroundShape, surface.foregroundDensity, charUV);
+
+                fOut_color = vec4(1, 0, 1, 1);
+                fOut_bloomInit = vec4(foregroundColor * charA * surface.foregroundShine, 1);
+
+                //Decide what to actually output, based on the rendering mode.
+                #define PICK_OUTPUT(colorRGB) { \
+                    fOut_color.rgb = vec3(colorRGB); \
+                    return; \
+                }
+                if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.regular)))
+                    PICK_OUTPUT(mix(backgroundColor, foregroundColor, charA))
+                else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.foreground_shape)))
                     PICK_OUTPUT(PROCEDURAL_GRADIENT(
                         float(surface.foregroundShape) / $N_CHAR_SHAPES,
                         0.5, 0.5, vec3(1.4, 1.7, 2.4), vec3(0.3, 0.2, 0.2)
@@ -299,20 +317,8 @@ function Assets()
                     PICK_OUTPUT(surface.backgroundDensity)
                 else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.is_foreground_transparent)))
                     PICK_OUTPUT(surface.isTransparent ? 1.0 : 0.0)
-
-                //Read the font atlas for this pixel's char.
-                float charA = readChar(surface.foregroundShape, surface.foregroundDensity, charUV);
-                if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.char_greyscale)))
+                else if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.char_greyscale)))
                     PICK_OUTPUT(charA)
-
-                //Apply the rules for coloring the char.
-                vec3 foregroundColor = readColor(surface.foregroundColor);
-                vec3 backgroundColor = readColor(surface.backgroundColor) *
-                                         surface.backgroundDensity;
-                vec3 finalColor = mix(backgroundColor, foregroundColor, charA);
-
-                if ($UNIFORM_NAME_RENDER_MODE == $(Int(FramebufferRenderMode.regular)))
-                    PICK_OUTPUT(finalColor)
             }
     """)
 
@@ -330,6 +336,35 @@ function Assets()
     chars_ubo = GL.Buffer(false, chars_ubo_data)
     GL.set_uniform_block(chars_ubo, UBO_INDEX_CHAR_RENDERING)
 
+    shader_bloom_blur = Bplus.GL.bp_glsl_str("""
+        #START_VERTEX
+            in vec2 vIn_pos;
+            out vec2 vOut_uv;
+            void main() {
+                gl_Position = vec4(vIn_pos, 0.5, 1.0);
+                vOut_uv = 0.5 + (0.5 * vIn_pos);
+            }
+
+        #START_FRAGMENT
+            in vec2 vOut_uv;
+            out vec4 fOut_color;
+
+            $UBO_CODE_BLUR_KERNEL
+
+            uniform sampler2D u_sourceTex;
+            uniform vec2 u_destTexel;
+
+            void main() {
+                fOut_color = vec4(0, 0, 0, 0);
+                for (int i = 0; i < u_blur_kernel.n_samples; ++i)
+                {
+                    vec2 uv = vOut_uv + (u_blur_kernel.samples[i].dest_pixel_offset * u_destTexel);
+                    fOut_color += u_blur_kernel.samples[i].weight *
+                                  textureLod(u_sourceTex, uv, 0);
+                }
+            }
+    """)
+
     return Assets(ft_lib, font_face,
                   chars_atlas_lookup_tex, chars_atlas_tex,
                   v2i(CHAR_PIXEL_SIZE, CHAR_PIXEL_SIZE),
@@ -341,6 +376,7 @@ function Assets()
                   GL.bp_glsl_str("#define RENDER_BACKGROUND \n $SHADER_CODE_RENDER_INTERFACE"),
                   chars_ubo_data,
                   chars_ubo,
+                  shader_bloom_blur,
                   GL.Texture(GL.DepthStencilFormats.depth_16u,
                              [ @f32(1) ;; ],
                              sampler = TexSampler{2}(
@@ -361,6 +397,7 @@ function Base.close(a::Assets)
     close(a.shader_render_segmentations_line)
     close(a.shader_render_interface_foreground)
     close(a.shader_render_interface_background)
+    close(a.shader_bloom_blur)
 
     @c FT_Done_Face(a.chars_font)
     @c FT_Done_FreeType(a.ft_lib)

@@ -495,6 +495,7 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
             CharRenderAssetBuffer
         ),
         "Char Render Shader" => assets.shader_render_chars,
+        "Bloom Blur Shader" => assets.shader_bloom_blur,
         "Blank Depth Tex" => assets.blank_depth_tex
     ], gui)
 
@@ -540,7 +541,7 @@ function gui_visualize_resource_category(name::String, named_resources::Vector, 
     return GUI.gui_within_fold(name) do
         for (name, resource) in named_resources
             fg_color = GUI.gVec4(gui_resource_color(typeof(resource))...)
-            GUI.gui_with_style_color(CImGui.LibCImGui.ImGuiCol_Text, fg_color) do
+            GUI.gui_with_style(CImGui.LibCImGui.ImGuiCol_Text, fg_color) do
                 CImGui.Text("$(short_type_name(typeof(resource))) $name ($(get_ogl_handle(resource))):")
                 CImGui.SameLine()
                 gui_visualize_resource(resource, gui)

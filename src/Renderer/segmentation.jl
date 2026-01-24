@@ -1,4 +1,4 @@
-# Segmentations are border lines 
+# Segmentations are border lines drawn between the ASCII chars.
 
 const SHADER_RENDER_SEGMENTATION_LINES = """
     //Draw one vertex per line; geometry shader will expand them into quads.

@@ -310,8 +310,8 @@ mutable struct Mission
             loadout, cab,
             WorldViewport(
                 player_view_resolution,
-                segment_lines,
-                player_interface
+                segmentation=segment_lines,
+                interface=player_interface
             ),
             cam_ubo,
             ambient_sound_loop,
@@ -340,7 +340,7 @@ function tick!(mission::Mission, delta_seconds::Float32)::Bool
     # Update the player's viewport.
     let int = mission.player_viewport.interface
         if exists(int)
-            update_interface!(int, delta_seconds, mission.player_viewport.resolution)
+            update_interface!(int, delta_seconds, mission.player_viewport.char_grid_resolution)
         end
     end
 
@@ -398,6 +398,8 @@ function render_mission(mission::Mission, assets::Assets,
         # Make sure nothing type-unstable is returned.
         return nothing
     end
+    @d8_debug(@check_gl_logs "After rendering mission viewport into framebuffer")
 
-    @d8_debug(@check_gl_logs "After rendering into framebuffer")
+    post_process_framebuffer(mission.player_viewport, assets, viewport_settings)
+    @d8_debug(@check_gl_logs "After post-processing mission viewport")
 end

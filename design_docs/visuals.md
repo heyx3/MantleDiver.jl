@@ -6,7 +6,12 @@ The 3D perspective view of the world is very low res, and each pixel is mapped t
 
 Everything in the world, including the in-pod HUD, renders to a small-resolution framebuffer in a special paletted format.
 
-There are two textures in the framebuffer, representing the "foreground" (ASCII char) and "background" (the blank space behind each char).
+There are two textures in the framebuffer:
+
+1. The "foreground" : an ASCII char.
+2. The "background" : a blank space behind each foreground.
+
+A bloom effect is later applied based on data in the framebuffer.
 
 ### Foreground
 
@@ -17,14 +22,18 @@ The foreground pixel format contains the following values:
 * Float "density" representing the space occupancy of the ASCII char.
   * A density of 0 always maps to the space character, while larger values can map to different ASCII chars following the chosen "shape".
 * Bool "transparent" representing whether a nearby surface underneath this one has the ability to bleed through (more info below).
+* Float "shine" representing the HDR brightness of the char, which is only used for a Bloom effect.
 
 Color and Shape will be packed into one 8-bit channel, as neither will get close to 255 different values.
 Let's say 4 bits for each (currently I have 6 different shapes).
 Density will be a hand-normalized float, using 7 bits of a UInt8 channel for itself.
-Transparency will be packed into the last bit of the Density channel.
+The last bit after Density will be used for Transparency.
+Shine will get its own 8-bit channel, very roughly mapping 255 values to the \[0, +Inf) range.
 
-The texture format for these values will be RG_UInt_8.
+The texture format for these values will therefore be RGB_UInt_8.
+
 The foreground data is rendered using opaque blending -- only the front-most face gets to control the output.
+Note that under this arrangement, the Bloom effect only applies to the character glyph and not its background.
 
 ### Background
 
@@ -53,6 +62,7 @@ The "surface properties" output by a shader in this game, and later packed into 
 * Foreground Shape, as a uint (not to go above a certain low value).
 * Foreground Density, as a float from 0 to 1
 * Foreground Transparency, as a bool
+* Foreground Shine, as a float
 * Background Color, as a uint (not to go above a certain low value).
 * Background Density, as a float from 0 to 1
 
@@ -66,10 +76,13 @@ Keep in mind that resolution is purposefully low (and constant), so fragment per
 4. Take the window resolution rounded down to the nearest multiple of the foreground/background resolution. To prevent stretching, take the side with a larger multiple and recalculate resolution to use the smaller multiple.
 5. Clear the screen to a particular background color (corrected aspect ratio will leave blank areas).
 6. Draw a quad of the screen size calculated in 4, sampling from the foreground/background to determine char and color, then from the rendered ASCII chars.
+7. Along with the rendered ASCII chars, output a second color buffer which contains the colored foreground "shine".
+8. Apply multiple blur passes to the Shine color buffer (kernel to be determined aesthetically).
+9. Add the blurred Shine passes back to the original render to get the blurred image.
+10. Add a final pseudo-CRT overlay effect.
 
-In debug builds, the last part of drawing to the screen can be replaced
-    by displaying the game texture within a Dear ImGUI window,
-    among other debug views of the game.
+In debug builds, the game is displayed within a Dear ImGUI window
+  alongside useful information and debug settings.
 
 ### Lighting
 
@@ -89,16 +102,22 @@ I'm not sure yet of the right way to apply light/shadows.
 ### Rocks
 
 Rock is colored based on the proportions of minerals it contains.
-The rock surface color is not an overall blend of mineral colors, but a noisy speckle of the colors,
-    where each pixel picks one of its minerals with a weighted-random chance.
+A global 3D noise is used to lerp between the different mineral indices,
+  and then the rock surface blends between that mineral and a "plain rock" look
+  based on how much of the mineral is present.
+
+Minerals primarily differ by their hue, foreground shape, and foreground/background density.
 
 Each mineral's color has a distinct hue, mildly-varying lightness, and similar saturation.
 Each mineral also has its own choice of foreground shape.
 
 ### FX
 
-* We could create an interesting distortion effect by switching the char atlas lookup texture (which maps a Shape/Density pair to the UV rect for the corresponding char) to use linear instead of clamp sampling. This might be useful for damage or mysterious environmental objects.
-* Smoke would look very cool, we should think about how to implement it (many small billboards? Volumetric cube?)
+* We could create an interesting distortion effect by switching the char atlas lookup texture
+(which maps a Shape/Density pair to the UV rect for the corresponding char) to use linear instead of clamp sampling.
+This might be useful for damage or mysterious environmental objects.
+* Smoke would look very cool, we should think about how to implement it
+(many small billboards? Handful of large billboards with fragment discarding? Volumetric cube?)
 
 ## Assets needed
 
@@ -133,7 +152,7 @@ Perhaps a small UBO can directly map ascii codes to shape+density,
 
 The border between the inside of the pod (i.e. the UI) and the rest of the world is the "screen segmentation".
 It will be drawn as a thick line *in-between* character grid cells,
-    making it the only part of the render that isn't done through the character system.
+    making it the only diagetic rendered object that isn't done through the character system.
 
 The segmentation will be composed of straight lines and rounded 90-degree corners.
 Rendering is therefore done in two batches:

@@ -11,7 +11,8 @@
 */
 
 MaterialSurface defineMineralSurface(uint fgColor, uint fgShape, float fgDensity,
-                                     uint bgColor, float bgDensity)
+                                     uint bgColor, float bgDensity,
+                                     float fgShine)
 {
     MaterialSurface mOut;
 
@@ -23,6 +24,8 @@ MaterialSurface defineMineralSurface(uint fgColor, uint fgShape, float fgDensity
     mOut.backgroundDensity = bgDensity;
 
     mOut.isTransparent = false;
+
+    mOut.foregroundShine = fgShine;
 
     return mOut;
 }
@@ -53,38 +56,45 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
     mOuts[MINERAL_storage] = defineMineralSurface(
         MINERAL_COLOR_storage, MINERAL_SHAPE_storage,
         NOISED(1,   0.23, 0.43,   1.0),
-        MINERAL_COLOR_storage, 0.1
+        MINERAL_COLOR_storage, 0.1,
+        CHATTED(0.0, 1.0, 0.5)
     );
     mOuts[MINERAL_hull] = defineMineralSurface(
-        CHATTED(MINERAL_COLOR_hull, 1, 0), MINERAL_SHAPE_hull,
+        MINERAL_COLOR_hull, MINERAL_SHAPE_hull,
         NOISED(1,   0.1, 0.7,   0.3),
-        6, 0.1
+        6, 0.1,
+        CHATTED(0.0, 2.0, 0.5)
     );
     mOuts[MINERAL_drill] = defineMineralSurface(
         MINERAL_COLOR_drill, MINERAL_SHAPE_drill,
         NOISED(1,    0.2, 0.3,   4.0),
-        1, NOISED(2,    0.05, 0.3,     5.0)
+        1, NOISED(2,    0.05, 0.3,     5.0),
+        CHATTED(0.0, 4.0, 0.5)
     );
     mOuts[MINERAL_specials] = defineMineralSurface(
-        CHATTED(MINERAL_COLOR_specials, 0, 1), MINERAL_SHAPE_specials,
+        MINERAL_COLOR_specials, MINERAL_SHAPE_specials,
         NOISED(1,    0.8, 1,   6.0),
-        1, 0.0
+        1, 0.0,
+        CHATTED(0.0, 8.0, 0.5)
     );
     mOuts[MINERAL_sensors] = defineMineralSurface(
-        CHATTED(MINERAL_COLOR_sensors, 0, 1), MINERAL_SHAPE_sensors,
+        MINERAL_COLOR_sensors, MINERAL_SHAPE_sensors,
         0.75,
-        1, 0.0
+        1, 0.0,
+        CHATTED(0.0, 16.0, 0.5)
     );
     mOuts[MINERAL_maneuvers] = defineMineralSurface(
-        CHATTED(MINERAL_COLOR_maneuvers, 1, 0), MINERAL_SHAPE_maneuvers,
+        MINERAL_COLOR_maneuvers, MINERAL_SHAPE_maneuvers,
         0.275,
-        MINERAL_COLOR_maneuvers, NOISED(2,    0.05, 0.7,     5.0)
+        MINERAL_COLOR_maneuvers, NOISED(2,    0.05, 0.7,     5.0),
+        CHATTED(0.0, 32.0, 0.5)
     );
 
     //Plain rock:
     mOuts[N_MINERALS] = defineMineralSurface(
         1, SHAPE_round, NOISED(1,    0.05, 0.4,    3.0),
-        1,              NOISED(0,    0.0,  0.15,   1.5)
+        1,              NOISED(0,    0.0,  0.15,   1.5),
+        NOISED(1,    0.0, 2.0,    8.0)
     );
 }
 

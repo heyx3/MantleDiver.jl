@@ -27,6 +27,7 @@ include("Renderer/segmentation.jl")
 include("Renderer/framebuffer.jl")
 include("Renderer/assets.jl")
 include("Renderer/interface.jl")
+include("Renderer/post.jl")
 include("Renderer/world_viewport.jl")
 
 include("Audio/audio.jl")
@@ -134,7 +135,7 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                 debug_gui = DebugGui()
                 @check_gl_logs "After DebugGui creation"
                 debug_game_render = GL.Target(
-                    convert(v2u, mission.player_viewport.resolution * 16),
+                    convert(v2u, mission.player_viewport.char_grid_resolution * 16),
                     GL.SimpleFormat(
                         GL.FormatTypes.normalized_uint,
                         GL.SimpleFormatComponents.RGB,
@@ -191,8 +192,10 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
 
             # Render the player's POV.
             player_viewport_settings = @d8_debug debug_gui.viewport_draw_settings ViewportDrawSettings(
+                # Any custom settings for release builds go here
             )
             mission_draw_settings = @d8_debug debug_gui.mission_draw_settings MissionDrawSettings(
+                # Any custom settings for release builds go here
             )
             render_mission(mission, assets, mission_draw_settings, player_viewport_settings)
             @d8_debug(@check_gl_logs "After mission render")
@@ -202,11 +205,20 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                 GL.target_clear(debug_game_render, vRGBAf(1, 0, 1, 0))
                 target_activate(debug_game_render)
             end begin
-                GL.clear_screen(vRGBAf(1, 0, 1, 0))
+                GL.target_activate(nothing)
+                GL.clear_screen(vRGBAf(0, 0, 0, 0))
             end
-            post_process_framebuffer(mission.player_viewport, assets, player_viewport_settings)
-            @d8_debug target_activate(nothing)
-            @d8_debug(@check_gl_logs "After mission post-processing")
+            GL.with_depth_writes(false) do
+              GL.with_depth_test(GL.ValueTests.pass) do
+                GL.with_culling(GL.FaceCullModes.off) do
+                  GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGBA)) do
+            #begin
+                simple_blit(mission.player_viewport.final_render)
+            end end end end
+            @d8_debug begin
+                target_activate(nothing)
+                @d8_debug(@check_gl_logs "After mission post-processing")
+            end
 
             # Draw the debugging GUI.
             @d8_debug begin
