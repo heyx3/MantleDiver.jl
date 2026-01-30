@@ -21,24 +21,25 @@ const DIRECT_CHAR_SHAPES = Set([
 const ASCII_CHARS_BY_SHAPE_THEN_DENSITY = Dict(
     #NOTE: Preview the look of these by setting your editor to use the game font
     CharShapeType.round => [
+        '.',
+        '®',
         '•', # \bullet
         '¤',
-        'o',
+        # 'o',
         '○',
-        '*',
-        '®',
-        'ø', # \o
+        # '*',
         '⊝', # \circledash
-        '0',
+        'ø', # \o
+        # '0',
         '@',
     ],
     CharShapeType.wide => [
         '-',
         '¬', # \neg
-        '~',
+        # '~',
         '∾', # \lazysinv
-        '÷', # \div
-        '±', # \pm
+        # '÷', # \div
+        # '±', # \pm
         '=',
         '≡', # \equiv
         '≣', # \Equiv
