@@ -31,7 +31,7 @@
                 )
                 mineral_noise = saturate(inv_lerp(this.minerals_rarity, @f32(1), mineral_noise))
                 mineral_noise ^= this.minerals_concentration
-                return (mineral_noise > 0.01) ? mineral_noise : 0.0f0
+                return (mineral_noise > 0.05) ? mineral_noise : 0.0f0
             end
             max_mineral_strength = maximum(rock_minerals)
             rock_minerals = map(f -> (f==max_mineral_strength ? f : 0.0f0), rock_minerals)

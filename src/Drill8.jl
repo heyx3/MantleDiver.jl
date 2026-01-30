@@ -134,18 +134,8 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                 @check_gl_logs "After DebugAssets creation"
                 debug_gui = DebugGui()
                 @check_gl_logs "After DebugGui creation"
-                debug_game_render = GL.Target(
-                    convert(v2u, mission.player_viewport.char_grid_resolution * 16),
-                    GL.SimpleFormat(
-                        GL.FormatTypes.normalized_uint,
-                        GL.SimpleFormatComponents.RGB,
-                        GL.SimpleFormatBitDepths.B8
-                    ),
-                    GL.DepthStencilFormats.depth_16u
-                )
-                @check_gl_logs "After DebugGameRender creation"
 
-                is_in_main_view::Bool = false
+                is_in_controllable_view::Bool = false
             end
 
             if auto_mode
@@ -186,7 +176,7 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
             (!continue_mission) && break
 
             # Handle mission inputs.
-            if @d8_debug is_in_main_view true
+            if @d8_debug is_in_controllable_view true
                 update_mission_inputs(mission)
             end
 
@@ -200,27 +190,19 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
             render_mission(mission, assets, mission_draw_settings, player_viewport_settings)
             @d8_debug(@check_gl_logs "After mission render")
 
-            # Draw the game to the screen (or to a Target in debug builds).
-            @d8_debug begin
-                GL.target_clear(debug_game_render, vRGBAf(1, 0, 1, 0))
-                target_activate(debug_game_render)
-            end begin
+            # In release builds, blit the game render to the screen.
+            @d8_debug nothing begin
                 GL.target_activate(nothing)
-                GL.clear_screen(vRGBAf(0, 0, 0, 0))
+                GL.clear_screen(vRGBAf(1, 0, 0.5, 0))
+                GL.with_depth_writes(false) do
+                 GL.with_depth_test(GL.ValueTests.pass) do
+                  GL.with_culling(GL.FaceCullModes.off) do
+                   GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGB), GL.make_blend_alpha(GL.BlendStateAlpha)) do
+                #begin
+                    Bplus.BplusApp.simple_blit(mission.player_viewport.final_render)
+                end end end end
             end
-            GL.with_depth_writes(false) do
-              GL.with_depth_test(GL.ValueTests.pass) do
-                GL.with_culling(GL.FaceCullModes.off) do
-                  GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGBA)) do
-            #begin
-                simple_blit(mission.player_viewport.final_render)
-            end end end end
-            @d8_debug begin
-                target_activate(nothing)
-                @d8_debug(@check_gl_logs "After mission post-processing")
-            end
-
-            # Draw the debugging GUI.
+            # In debug builds, display the debug GUI (including a pane showing the game render).
             @d8_debug begin
                 screen_size = convert(v2f, GL.get_window_size())
                 CImGui.SetNextWindowPos(v2i(0, 0))
@@ -234,13 +216,13 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                         @check_gl_logs "Before any debug GUI tabs"
 
                         gui_tab_item("Game View") do
-                            is_in_main_view = true
-                            gui_debug_main_view(debug_gui, mission, debug_game_render)
+                            is_in_controllable_view = true
+                            gui_debug_main_view(debug_gui, mission)
                         end
                         @check_gl_logs "After 'Game View' tab"
 
                         gui_tab_item("Debug Game View") do
-                            is_in_main_view = false
+                            is_in_controllable_view = true
 
                             game_view_tab_region = get_imgui_current_drawable_region()
                             game_view_area = Box2Df(
@@ -263,14 +245,14 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                         @check_gl_logs "After 'Debug Game View' tab"
 
                         gui_tab_item("Assets") do
-                            is_in_main_view = false
+                            is_in_controllable_view = false
 
                             gui_visualize_textures(debug_gui, debug_assets, mission, assets)
                         end
                         @check_gl_logs "After 'Assets' tab"
 
                         gui_tab_item("OpenGL resources") do
-                            is_in_main_view = false
+                            is_in_controllable_view = false
 
                             gui_visualize_resources(debug_gui, debug_assets, mission, assets)
                         end
@@ -295,14 +277,18 @@ function inner_main(auto_mode_frame_count::Optional{Int})::Cint
                     p_voxel = mission.player.pos_component.get_voxel_position()
                     dir_flipR = CabMovementDir(p_dir, 1)
                     dir_flipL = CabMovementDir(p_dir, -1)
-                    if can_do_move_from(p_voxel, dir_flipR, MOVE_CLIMB_UP, mission.grid)
+                    if rand(Float32) < 0.1
+                        next_rot = mission.player.rot_component.rot >>
+                                     Bplus.fquat(WORLD_UP, deg2rad(30))
+                        player_start_turning(mission.player.entity, next_rot)
+                    elseif can_do_move_from(p_voxel, dir_flipR, MOVE_CLIMB_UP, mission.grid)
                         player_start_moving(mission.player.entity, MOVE_CLIMB_UP, dir_flipR)
                     elseif can_do_move_from(p_voxel, dir_flipR, MOVE_CLIMB_DOWN, mission.grid)
                         player_start_moving(mission.player.entity, MOVE_CLIMB_DOWN, dir_flipR)
-                    elseif can_do_move_from(p_voxel, dir_flipR, MOVE_FORWARD, mission.grid)
-                        player_start_moving(mission.player.entity, MOVE_FORWARD, dir_flipR)
                     elseif can_drill_from(p_voxel, dir_flipR, v3f(1, 0, 0), mission.grid)
                         player_start_drilling(mission.player, grid_dir(mission.player.rot_component.rot))
+                    elseif can_do_move_from(p_voxel, dir_flipR, MOVE_FORWARD, mission.grid)
+                        player_start_moving(mission.player.entity, MOVE_FORWARD, dir_flipR)
                     else
                         # If all else fails, turn in one direction.
                         next_rot = mission.player.rot_component.rot >>

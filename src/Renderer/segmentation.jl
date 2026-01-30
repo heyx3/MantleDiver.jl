@@ -62,8 +62,10 @@ const SHADER_RENDER_SEGMENTATION_LINES = """
     #START_FRAGMENT
         in vec2 fIn_uv;
         out vec4 fOut_color;
+        out vec4 fOut_bloomInit;
         void main() {
             fOut_color = vec4(0.7, 0.7, 0.7, 0.8);
+            fOut_bloomInit = vec4(0, 0, 0, 0);
         }
 """
 

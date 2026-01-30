@@ -48,46 +48,46 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
     float chatInterval = mix(20.0, 2.0, chatCloseness);
     ivec2 chatMaskSurface = sign(ivec2(floor(mod(gl_FragCoord.xy, chatInterval))));
     bool chatMask = (chatMaskSurface.x + chatMaskSurface.y) == 0 &&
-                    (perlinNoise(worldPos * 5.0, 3.08384) > 0.35),
-         chatFlip = hashTo1(floor(vec4(u_gameSeconds, worldPos)
-                                    * vec4(2, 20, 20, 20))) > 0.275;
+                    (perlinNoise(worldPos * 2.0, 3.08384) > 0.55),
+         chatFlip = false && (hashTo1(floor(vec4(u_gameSeconds, worldPos)
+                                    * vec4(2, 20, 20, 20))) > 0.275);
     #define CHATTED(normal, ifChat, ifChatFlipped) (chatMask ? (chatFlip ? (ifChatFlipped) : (ifChat)) : (normal))
 
     mOuts[MINERAL_storage] = defineMineralSurface(
         MINERAL_COLOR_storage, MINERAL_SHAPE_storage,
         NOISED(1,   0.23, 0.43,   1.0),
         MINERAL_COLOR_storage, 0.1,
-        CHATTED(0.0, 1.0, 0.5)
+        CHATTED(0.0, 50.0, 0.5)
     );
     mOuts[MINERAL_hull] = defineMineralSurface(
         MINERAL_COLOR_hull, MINERAL_SHAPE_hull,
         NOISED(1,   0.1, 0.7,   0.3),
         6, 0.1,
-        CHATTED(0.0, 2.0, 0.5)
+        CHATTED(0.0, 70.0, 0.5)
     );
     mOuts[MINERAL_drill] = defineMineralSurface(
         MINERAL_COLOR_drill, MINERAL_SHAPE_drill,
         NOISED(1,    0.2, 0.3,   4.0),
         1, NOISED(2,    0.05, 0.3,     5.0),
-        CHATTED(0.0, 4.0, 0.5)
+        CHATTED(0.0, 90.0, 0.5)
     );
     mOuts[MINERAL_specials] = defineMineralSurface(
         MINERAL_COLOR_specials, MINERAL_SHAPE_specials,
-        NOISED(1,    0.8, 1,   6.0),
+        NOISED(1,    0.6, 1,   6.0),
         1, 0.0,
-        CHATTED(0.0, 8.0, 0.5)
+        CHATTED(0.0, 110.0, 0.5)
     );
     mOuts[MINERAL_sensors] = defineMineralSurface(
         MINERAL_COLOR_sensors, MINERAL_SHAPE_sensors,
         0.75,
         1, 0.0,
-        CHATTED(0.0, 16.0, 0.5)
+        CHATTED(0.0, 130.0, 0.5)
     );
     mOuts[MINERAL_maneuvers] = defineMineralSurface(
         MINERAL_COLOR_maneuvers, MINERAL_SHAPE_maneuvers,
         0.275,
         MINERAL_COLOR_maneuvers, NOISED(2,    0.05, 0.7,     5.0),
-        CHATTED(0.0, 32.0, 0.5)
+        CHATTED(0.0, 150.0, 0.5)
     );
 
     //Plain rock:

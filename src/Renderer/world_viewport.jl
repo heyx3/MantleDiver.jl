@@ -20,10 +20,12 @@ mutable struct WorldViewport
 
     bloom_downsamples::Vector{Pair{Texture, Target}}
     bloom_blur::DualBlur
+    bloom_strength::Float32
     bloom_kernel_buffer::Buffer
 
     final_render::Texture
-    post_render_target::Target
+    chars_render_target::Target # [ final_render, bloom_downsammples[1] ]
+    post_render_target::Target # [ final_render ]
 
     function WorldViewport(char_grid_resolution::v2i
                            ;
@@ -33,7 +35,10 @@ mutable struct WorldViewport
                                2,
                                BLUR_KERNELS[:dual_kawase_downscale],
                                BLUR_KERNELS[:dual_kawase_upscale]
-                           ))
+                           ),
+                           bloom_strength::Float32 = 0.1f0)
+        final_render_resolution = char_grid_resolution * CHAR_PIXEL_SIZE
+
         foreground = Texture(FOREGROUND_FORMAT, char_grid_resolution)
         foreground_depth = Texture(DEPTH_FORMAT, char_grid_resolution;
                                    sampler=GL.TexSampler{2}(
@@ -59,12 +64,12 @@ mutable struct WorldViewport
 
         # Set up the downsampled blur textures for Bloom.
         bloom_downsamples = Vector{Pair{Texture, Target}}()
-        next_downsample_size::v2i = char_grid_resolution * 2
-        for i in 1:bloom_blur.n_iterations
+        next_downsample_size::v2i = final_render_resolution * 2
+        for i in 1:(bloom_blur.n_iterations + 1)
             next_downsample_size = max(1, next_downsample_size ÷ 2)
 
             tex = Texture(
-                SimpleFormat(FormatTypes.float, SimpleFormatComponents.R, SimpleFormatBitDepths.B16),
+                SimpleFormat(FormatTypes.float, SimpleFormatComponents.RGB, SimpleFormatBitDepths.B16),
                 next_downsample_size,
                 sampler = TexSampler{2}(wrapping=WrapModes.clamp),
                 n_mips = 1
@@ -77,13 +82,18 @@ mutable struct WorldViewport
             end
         end
 
-        final_render_resolution = char_grid_resolution * CHAR_PIXEL_SIZE
-        final_render = Texture(SpecialFormats.rgb10_a2, final_render_resolution)
-        post_render_target = GL.Target(
+        final_render = Texture(SpecialFormats.rgb10_a2, final_render_resolution,
+                               sampler = TexSampler{2}(wrapping=WrapModes.clamp),
+                               n_mips = 1)
+        chars_render_target = GL.Target(
             [
                 TargetOutput(tex=final_render),
                 TargetOutput(tex=bloom_downsamples[1][1])
             ],
+            GL.DepthStencilFormats.depth_16u
+        )
+        post_render_target = GL.Target(
+            TargetOutput(tex=final_render),
             GL.DepthStencilFormats.depth_16u
         )
 
@@ -97,8 +107,8 @@ mutable struct WorldViewport
             GL.Buffer(true, ubo_write_data),
             exists(segmentation) ? ViewportSegmentation(segmentation, 5.0f0) : nothing,
             interface,
-            bloom_downsamples, bloom_blur, Buffer(true, BlurKernel),
-            final_render, post_render_target
+            bloom_downsamples, bloom_blur, bloom_strength, Buffer(true, BlurKernel),
+            final_render, chars_render_target, post_render_target
         )
     end
 end
@@ -113,9 +123,6 @@ function Base.close(wv::WorldViewport)
     end
 end
 
-const POST_RENDER_TARGET_WITH_BLOOM = [ 1, 2 ]
-const POST_RENDER_TARGET_WITHOUT_BLOOM = [ 1, nothing ]
-
 @kwdef mutable struct ViewportDrawSettings
     output_mode::E_FramebufferRenderMode = FramebufferRenderMode.regular
     background_color::vRGBf = vRGBf(0, 0, 0)
@@ -123,6 +130,8 @@ const POST_RENDER_TARGET_WITHOUT_BLOOM = [ 1, nothing ]
 
     enable_bloom::Bool = true
     bloom_strength_scale::Float32 = 1.0f0
+    bloom_spread_scale::Float32 = 9.5f0
+    bloom_iteration_reduction::Int = 0
 
     enable_segmentation::Bool = true
     enable_interface::Bool = true
@@ -133,20 +142,17 @@ end
 Executes the render logic for the world,
     given a callback that actually issues all the world draw calls.
 
-The callback should take one argument, the `E_RenderPass`,
+The callback should take one argument, an `E_RenderPass`,
     and should leave unchanged the render state and active Target.
-
-You normally want to call `post_process_framebuffer()` after this.
 "
-function render_to_framebuffer(callback_draw_world,
-                               viewport::WorldViewport,
-                               assets::Assets,
-                               settings::ViewportDrawSettings)
+function render_viewport(callback_draw_world,
+                         viewport::WorldViewport,
+                         assets::Assets,
+                         settings::ViewportDrawSettings)
     GL.with_depth_writes(true) do
      GL.with_depth_test(GL.ValueTests.less_than) do
-      GL.with_viewport(Math.Box2Di(min=v2i(1, 1),  size=viewport.char_grid_resolution)) do
-       GL.with_culling(GL.FaceCullModes.on) do
-        GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGBA)) do
+      GL.with_culling(GL.FaceCullModes.on) do
+       GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGBA)) do
         #begin
             GL.set_uniform_block(viewport.ubo_write, UBO_INDEX_FRAMEBUFFER_WRITE_DATA)
 
@@ -160,7 +166,7 @@ function render_to_framebuffer(callback_draw_world,
             GL.target_clear(viewport.foreground_target, Float32(1))
             GL.target_activate(viewport.foreground_target)
             GL.view_activate(assets.blank_depth_tex)
-            if exists(viewport.interface)
+            if settings.enable_interface && exists(viewport.interface)
                 render_interface(
                     viewport.interface,
                     assets.shader_render_interface_foreground, RenderPass.foreground,
@@ -191,55 +197,50 @@ function render_to_framebuffer(callback_draw_world,
             GL.view_deactivate(viewport.foreground_depth)
 
             GL.target_activate(nothing)
-    end end end end end
-end
+    end end end end
 
-"
-Displays the given framebuffer according to the given settings
-    (usually by rendering it as ASCII characters).
-"
-function post_process_framebuffer(viewport::WorldViewport,
-                                  assets::Assets,
-                                  settings::ViewportDrawSettings)
+    # Now do post effects.
     screen_triangle_mesh = service_BasicGraphics().screen_triangle
     GL.with_depth_writes(false) do
      GL.with_depth_test(GL.ValueTests.pass) do
       GL.with_culling(GL.FaceCullModes.off) do
        GL.with_blending(GL.make_blend_opaque(GL.BlendStateRGBA)) do
+       #begin
         # Render the chars and initial bloom value.
+        GL.target_clear(viewport.chars_render_target, v4f(0, 0, 0, 0), 1)
+        GL.target_clear(viewport.chars_render_target, v4f(0, 0, 0, 0), 2)
+        GL.target_activate(viewport.chars_render_target)
         #   Uniforms:
         GL.set_uniform_block(viewport.ubo_read, UBO_INDEX_FRAMEBUFFER_READ_DATA)
         GL.set_uniform(assets.shader_render_chars, UNIFORM_NAME_RENDER_MODE, Int(settings.output_mode))
         #   Texture handles:
-        GL.view_activate(viewport.foreground)
-        GL.view_activate(viewport.background)
-        GL.view_activate.((assets.chars_atlas, assets.chars_atlas_lookup, assets.palette))
-        #   Output target:
-        GL.target_activate(viewport.post_render_target)
-        GL.target_configure_fragment_outputs(viewport.post_render_target, POST_RENDER_TARGET_WITH_BLOOM)
-        GL.target_clear(viewport.post_render_target, v4f(0, 0, 0, 0), 1)
-        GL.target_clear(viewport.post_render_target, v4f(0, 0, 0, 0), 2)
+        GL.view_activate.((
+            viewport.foreground, viewport.background,
+            assets.chars_atlas, assets.chars_atlas_lookup, assets.palette
+        ))
         #   State and draw call:
         GL.render_mesh(screen_triangle_mesh, assets.shader_render_chars)
         #   Clean up:
-        GL.view_deactivate(viewport.foreground)
-        GL.view_deactivate(viewport.background)
-        GL.view_deactivate.((assets.chars_atlas, assets.chars_atlas_lookup, assets.palette))
+        GL.view_deactivate.((
+            viewport.foreground, viewport.background,
+            assets.chars_atlas, assets.chars_atlas_lookup, assets.palette
+        ))
 
         # Draw the segmentations.
         if settings.enable_segmentation && exists(viewport.segmentation)
             screen_pixels = size(GL.get_context().state.viewport)
             char_pixels = screen_pixels ÷ viewport.char_grid_resolution
             draw_segmentation(assets.segmentation, viewport.segmentation,
-                            char_pixels, screen_pixels)
+                              char_pixels, screen_pixels)
         end
 
         if settings.enable_bloom
             GL.set_uniform_block(viewport.bloom_kernel_buffer, UBO_INDEX_BLUR_KERNEL)
+            GL.set_uniform(assets.shader_bloom_blur, "u_blurSpreadScale", settings.bloom_spread_scale)
 
             # Downscale+blur the input.
             GL.set_buffer_data(viewport.bloom_kernel_buffer, viewport.bloom_blur.downscale_kernel)
-            for dest_i in 2:length(viewport.bloom_downsamples)
+            for dest_i in 2:(length(viewport.bloom_downsamples)-settings.bloom_iteration_reduction)
                 # Set up the source texture.
                 src_tex = viewport.bloom_downsamples[dest_i-1][1]
                 GL.set_uniform(assets.shader_bloom_blur, "u_sourceTex", src_tex)
@@ -258,7 +259,7 @@ function post_process_framebuffer(viewport::WorldViewport,
 
             # Upscale+blur the input, adding on top of the original downscaled versions.
             GL.set_buffer_data(viewport.bloom_kernel_buffer, viewport.bloom_blur.upscale_kernel)
-            for dest_i in (length(viewport.bloom_downsamples)-1):-1:1
+            for dest_i in (length(viewport.bloom_downsamples)-1 - settings.bloom_iteration_reduction):-1:1
                 # Set up the source texture.
                 src_tex = viewport.bloom_downsamples[dest_i+1][1]
                 GL.set_uniform(assets.shader_bloom_blur, "u_sourceTex", src_tex)
@@ -280,11 +281,18 @@ function post_process_framebuffer(viewport::WorldViewport,
                              GL.make_blend_opaque(GL.BlendStateAlpha)) do
             #begin
                 GL.target_activate(viewport.post_render_target)
-                GL.target_configure_fragment_outputs(viewport.post_render_target, POST_RENDER_TARGET_WITHOUT_BLOOM)
-                GL.target_clear(viewport.post_render_target, v4f(0, 0, 0, 0))
 
-                simple_blit(viewport.bloom_downsamples[1][1])
+                GL.set_uniform(assets.shader_render_bloom, "u_bloomRaw",
+                               viewport.bloom_downsamples[1][1])
+                GL.view_activate(viewport.bloom_downsamples[1][1])
+                GL.set_uniform(assets.shader_render_bloom, "u_bloomStrength",
+                               viewport.bloom_strength * settings.bloom_strength_scale)
+
+                GL.render_mesh(screen_triangle_mesh, assets.shader_render_bloom)
+                GL.view_deactivate(viewport.bloom_downsamples[1][1])
             end
         end
     end end end end
+
+    GL.target_activate(nothing)
 end

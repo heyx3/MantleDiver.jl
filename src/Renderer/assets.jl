@@ -3,7 +3,7 @@ const ASSETS_FOLDER = "assets"
 const FILE_NAME_FONT = "JetBrainsMono-Bold.ttf"
 const FILE_NAME_PALETTE = "Palette.png"
 
-const CHAR_PIXEL_SIZE = 64
+const CHAR_PIXEL_SIZE = 16
 
 
 Bplus.@bp_enum(FramebufferRenderMode,
@@ -37,6 +37,7 @@ mutable struct Assets
     palette::Texture
 
     shader_render_chars::Program
+    shader_render_bloom::Program
     shader_render_segmentations_line::Program
     shader_render_segmentations_corner::Program
     shader_render_interface_foreground::Program
@@ -261,12 +262,7 @@ function Assets()
 
     shader_render_chars = Bplus.GL.bp_glsl_str("""
         #START_VERTEX
-            in vec2 vIn_pos;
-            out vec2 vOut_uv;
-            void main() {
-                gl_Position = vec4(vIn_pos, 0.5, 1.0);
-                vOut_uv = 0.5 + (0.5 * vIn_pos);
-            }
+            $(make_vertex_shader_blit())
 
         #START_FRAGMENT
             in vec2 vOut_uv;
@@ -322,6 +318,27 @@ function Assets()
             }
     """)
 
+    shader_render_bloom = Bplus.GL.bp_glsl_str("""
+        #START_VERTEX
+            $(make_vertex_shader_blit())
+
+        #START_FRAGMENT
+
+            in vec2 vOut_uv;
+            out vec4 fOut_bloomAdd;
+
+            uniform sampler2D u_bloomRaw;
+            uniform float u_bloomStrength;
+
+            void main() {
+                fOut_bloomAdd = clamp(
+                    u_bloomStrength * textureLod(u_bloomRaw, vOut_uv, 0),
+                    0.0, 1.0
+                );
+                fOut_bloomAdd.a = 1;
+            }
+    """)
+
     chars_ubo_data = CharRenderAssetBuffer(
         GL.get_ogl_handle(GL.get_view(chars_atlas_lookup_tex)),
         GL.get_ogl_handle(GL.get_view(chars_atlas_tex)),
@@ -338,12 +355,7 @@ function Assets()
 
     shader_bloom_blur = Bplus.GL.bp_glsl_str("""
         #START_VERTEX
-            in vec2 vIn_pos;
-            out vec2 vOut_uv;
-            void main() {
-                gl_Position = vec4(vIn_pos, 0.5, 1.0);
-                vOut_uv = 0.5 + (0.5 * vIn_pos);
-            }
+            $(make_vertex_shader_blit())
 
         #START_FRAGMENT
             in vec2 vOut_uv;
@@ -353,15 +365,19 @@ function Assets()
 
             uniform sampler2D u_sourceTex;
             uniform vec2 u_destTexel;
+            uniform float u_blurSpreadScale;
 
             void main() {
-                fOut_color = vec4(0, 0, 0, 0);
+                fOut_color = vec4(0, 0, 0, 1);
                 for (int i = 0; i < u_blur_kernel.n_samples; ++i)
                 {
-                    vec2 uv = vOut_uv + (u_blur_kernel.samples[i].dest_pixel_offset * u_destTexel);
-                    fOut_color += u_blur_kernel.samples[i].weight *
-                                  textureLod(u_sourceTex, uv, 0);
+                    vec2 uv = vOut_uv + (u_blur_kernel.samples[i].dest_pixel_offset *
+                                          u_blurSpreadScale * u_destTexel);
+                    fOut_color.rgb += u_blur_kernel.samples[i].weight *
+                                      textureLod(u_sourceTex, uv, 0).rgb;
                 }
+
+                fOut_color.a = 1;
             }
     """)
 
@@ -369,13 +385,12 @@ function Assets()
                   chars_atlas_lookup_tex, chars_atlas_tex,
                   v2i(CHAR_PIXEL_SIZE, CHAR_PIXEL_SIZE),
                   palette_tex,
-                  shader_render_chars,
+                  shader_render_chars, shader_render_bloom,
                   GL.bp_glsl_str(SHADER_RENDER_SEGMENTATION_LINES),
                   GL.bp_glsl_str(SHADER_RENDER_SEGMENTATION_LINES),
                   GL.bp_glsl_str("#define RENDER_FOREGROUND \n $SHADER_CODE_RENDER_INTERFACE"),
                   GL.bp_glsl_str("#define RENDER_BACKGROUND \n $SHADER_CODE_RENDER_INTERFACE"),
-                  chars_ubo_data,
-                  chars_ubo,
+                  chars_ubo_data, chars_ubo,
                   shader_bloom_blur,
                   GL.Texture(GL.DepthStencilFormats.depth_16u,
                              [ @f32(1) ;; ],
@@ -391,6 +406,7 @@ function Base.close(a::Assets)
     close(a.chars_atlas)
     close(a.palette)
     close(a.shader_render_chars)
+    close(a.shader_render_bloom)
     close(a.chars_ubo)
     close(a.blank_depth_tex)
     close(a.shader_render_segmentations_corner)

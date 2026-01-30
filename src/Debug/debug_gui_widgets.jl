@@ -132,6 +132,7 @@ mutable struct DebugGui
 
     # Texture visualization panel:
     tex_viz_min_length::Float32
+    tex_viz_max_length::Float32
     foreground_viz_target::Target
     background_viz_target::Target
 
@@ -143,7 +144,7 @@ mutable struct DebugGui
         MissionDrawSettings(),
         ViewportDrawSettings(),
         [ ], 1,
-        128,
+        128, 1024,
         Target(
             v2u(512, 512),
             SimpleFormat(FormatTypes.normalized_uint,
@@ -170,7 +171,7 @@ Base.close(dg::DebugGui) = close.((
 ###########################################
 ##   Main game view
 
-function gui_debug_main_view(gui::DebugGui, mission::Mission, rendered_game::Target)
+function gui_debug_main_view(gui::DebugGui, mission::Mission)
     game_view_tab_region = get_imgui_current_drawable_region()
     draw_list = CImGui.GetForegroundDrawList()
 
@@ -195,7 +196,7 @@ function gui_debug_main_view(gui::DebugGui, mission::Mission, rendered_game::Tar
     )
     basis_screen_origin = v2f(
         min_inclusive(game_view_tab_region).x +
-            rendered_game.size.x +
+            mission.player_viewport.final_render_resolution.x +
             BASIS_SCREEN_LENGTH + 10,
         center(game_view_tab_region).y
     )
@@ -225,11 +226,29 @@ function gui_debug_main_view(gui::DebugGui, mission::Mission, rendered_game::Tar
     end
 
     # Provide an editor for render settings.
-    @c CImGui.Checkbox("Render world?", &gui.mission_draw_settings.enable_world)
+    CImGui.Text("Rendering:")
+    CImGui.SameLine(20, 0)
+    @c CImGui.Checkbox("World", &gui.mission_draw_settings.enable_world)
     CImGui.SameLine()
-    @c CImGui.Checkbox("Render interface?", &gui.viewport_draw_settings.enable_interface)
+    @c CImGui.Checkbox("Interface", &gui.viewport_draw_settings.enable_interface)
     CImGui.SameLine()
-    @c CImGui.Checkbox("Render segmentations?", &gui.viewport_draw_settings.enable_segmentation)
+    @c CImGui.Checkbox("Segmentations", &gui.viewport_draw_settings.enable_segmentation)
+    @c CImGui.Checkbox("Bloom", &gui.viewport_draw_settings.enable_bloom)
+    if gui.viewport_draw_settings.enable_bloom
+        GUI.gui_with_item_width(50) do
+            CImGui.SameLine()
+            @c CImGui.DragFloat("Scale", &gui.viewport_draw_settings.bloom_strength_scale, 0.1, 0, 100)
+            CImGui.SameLine()
+            @c CImGui.DragFloat("Spread", &gui.viewport_draw_settings.bloom_spread_scale, 0.1, 0.01, 1000)
+            CImGui.SameLine()
+            let bir = convert(Int32, gui.viewport_draw_settings.bloom_iteration_reduction)
+                @c CImGui.DragInt("Reduce", &bir, 0.1,
+                                  0,
+                                  length(mission.player_viewport.bloom_downsamples))
+                gui.viewport_draw_settings.bloom_iteration_reduction = bir
+            end
+        end
+    end
     for (i, (name, value)) in enumerate(( ("Regular", FramebufferRenderMode.regular),
                                           ("Chars only", FramebufferRenderMode.char_greyscale),
                                           ("FG Shape", FramebufferRenderMode.foreground_shape),
@@ -245,8 +264,8 @@ function gui_debug_main_view(gui::DebugGui, mission::Mission, rendered_game::Tar
         end
     end
 
-    CImGui.Image(GUI.gui_tex_handle(rendered_game.attachment_colors[1].tex),
-                 convert(v2f, rendered_game.size),
+    CImGui.Image(GUI.gui_tex_handle(mission.player_viewport.final_render),
+                 convert(v2f, mission.player_viewport.final_render_resolution),
                  # Flip UV y:
                  (0,1), (1,0))
 end
@@ -382,9 +401,9 @@ end
 
 function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
                                 mission::Mission, assets::Assets)
-    @c CImGui.SliderFloat(
-        "Min Size", &gui.tex_viz_min_length,
-        1, 1024
+    @c CImGui.DragFloatRange2(
+        "Size Clamp", &gui.tex_viz_min_length, &gui.tex_viz_max_length,
+        1.0,     1, 4096
     )
 
     function show_tex(name::String, tex::GL.Texture,
@@ -397,21 +416,15 @@ function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
         handle = GUI.gui_tex_handle(view)
         size::v2u = GL.tex_size(tex)
 
+        draw_size::v2f = convert(v2f, size)
         # If the texture is very small, blow it up.
-        scale_up_ratio = gui.tex_viz_min_length / min(size)
-        draw_size::v2f = if scale_up_ratio > 1
-            size * scale_up_ratio
-        else
-            size
-        end
-
+        scale_up_ratio = max(1, gui.tex_viz_min_length / min(draw_size))
+        draw_size *= scale_up_ratio
         # If the texture is very big, shrink it down.
-        scale_down_ratio = 256 / max(size)
-        if scale_down_ratio < 1
-            draw_size *= scale_down_ratio
-        end
+        scale_down_ratio = min(1, gui.tex_viz_max_length / max(draw_size))
+        draw_size *= scale_down_ratio
 
-        CImGui.Text(name * " ($(size.x)x$(size.y)) (as $(draw_size.x)x$(draw_size.y))")
+        CImGui.Text(name * " ($(size.x)x$(size.y)) (drawn at $(draw_size.x)x$(draw_size.y))")
         CImGui.Image(handle, draw_size,
                      (0, flip_uv_y ? 1 : 0),
                      (1, flip_uv_y ? 0 : 1))
@@ -439,6 +452,10 @@ function gui_visualize_textures(gui::DebugGui, debug_assets::DebugAssets,
     show_tex("Char Atlas", assets.chars_atlas, true)
     show_tex("Char UV Lookup", assets.chars_atlas_lookup)
     show_tex("Palette", assets.palette)
+    show_tex("Final Render", mission.player_viewport.final_render)
+    for (tex, target) in mission.player_viewport.bloom_downsamples
+        show_tex("Bloom Downsample", tex)
+    end
 end
 
 
@@ -506,6 +523,8 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
         ),
         "Player View Foreground Tex" => mission.player_viewport.foreground,
         "Player View Background Tex" => mission.player_viewport.background,
+        "Player View Bloom Blurred" => mission.player_viewport.bloom_downsamples[1][1],
+        "Player View Final Render" => mission.player_viewport.final_render,
         "Player View Sampling UBO" => BufferAsStruct(
             mission.player_viewport.ubo_read,
             FrameBufferReadData
@@ -514,6 +533,7 @@ function gui_visualize_resources(gui::DebugGui, debug_assets::DebugAssets,
             mission.player_viewport.ubo_write,
             FrameBufferWriteData
         )
+        #TODO: The downscaled bloom passes, all on the same line
     ], gui)
 
     gui_visualize_resource_category("Interface", [
@@ -647,6 +667,8 @@ function gui_visualize_resource(t::GL.Texture, gui::DebugGui)
         if t.swizzle != SwizzleRGBA()
             CImGui.Text("Swizzling: $(t.swizzle)")
         end
+
+        CImGui.Image(gui_tex_handle(t), max(256, t.size.xy))
     end
 end
 

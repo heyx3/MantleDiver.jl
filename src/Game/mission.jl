@@ -353,10 +353,7 @@ end
     enable_world::Bool = true # Disables world but not interface/segmentation rendering
 end
 
-"
-Renders the mission into the player's viewport.
-You may display this viewport with `post_process_framebuffer(mission.player_viewport, ...)`.
-"
+"Renders the player's viewport of the mission"
 function render_mission(mission::Mission, assets::Assets,
                         mission_settings::MissionDrawSettings,
                         viewport_settings::ViewportDrawSettings)
@@ -388,7 +385,7 @@ function render_mission(mission::Mission, assets::Assets,
     render_data = WorldRenderData(
         mission.player_viewport
     )
-    render_to_framebuffer(mission.player_viewport, assets, viewport_settings) do pass::E_RenderPass
+    render_viewport(mission.player_viewport, assets, viewport_settings) do pass::E_RenderPass
         if mission_settings.enable_world
             for renderable in mission.buffer_renderables
                 renderable.render(render_data)
@@ -398,8 +395,5 @@ function render_mission(mission::Mission, assets::Assets,
         # Make sure nothing type-unstable is returned.
         return nothing
     end
-    @d8_debug(@check_gl_logs "After rendering mission viewport into framebuffer")
-
-    post_process_framebuffer(mission.player_viewport, assets, viewport_settings)
-    @d8_debug(@check_gl_logs "After post-processing mission viewport")
+    @d8_debug(@check_gl_logs "After rendering mission viewport")
 end
