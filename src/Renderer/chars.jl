@@ -20,16 +20,18 @@ const DIRECT_CHAR_SHAPES = Set([
 "Not including the space character which is implicitly at the min density of every shape"
 const ASCII_CHARS_BY_SHAPE_THEN_DENSITY = Dict(
     #NOTE: Preview the look of these by setting your editor to use the game font
+    # Original font: "Iosevka SS16 Expanded"
+    # Current game font: "JetBrains Mono"
     CharShapeType.round => [
         '.',
-        '®',
-        '•', # \bullet
+        # '•', # \bullet
         '¤',
+        '®',
         # 'o',
         '○',
         # '*',
         '⊝', # \circledash
-        'ø', # \o
+        # 'ø', # \o
         # '0',
         '@',
     ],
@@ -41,63 +43,60 @@ const ASCII_CHARS_BY_SHAPE_THEN_DENSITY = Dict(
         # '÷', # \div
         # '±', # \pm
         '=',
-        '≡', # \equiv
+        # '≡', # \equiv
         '≣', # \Equiv
     ],
     CharShapeType.tall => [
         ':',
-        ';',
+        # ';',
         '¦', # \brokenbar
-        'i',
+        # 'i',
         'j',
-        '!',
+        # '!',
         '|',
-        '1',
+        # '1',
+        '‡', # \ddagger
         'I',
         '¶',
         '║',
     ],
     CharShapeType.cross => [
         '›', # \guilsinglright
-        '»',
+        # '»',
         '×', # \times
-        '+',
-        'x',
-        '‡', # \ddagger
-        'X',
+        # '+',
+        # 'x',
         '¼',
-        'Ž', # Z\check
+        'X',
+        # 'Ž', # Z\check
         '%',
-        '#', 
-        '�',
+        '#',
     ],
     CharShapeType.block => [
         '⌷',
-        'm',
+        '�',
         '░', # \blockqtrshaded
-        '8',
         '▒', # \blockhalfshaded
-        'M',
-        '■', # \blacksquare
+        # '■', # \blacksquare
         '▓', # \blockthreeqtrshaded
         '█', # \blockfull
     ],
     CharShapeType.unusual => [
-        '∘', # \circ
-        '⋯', # \cdots
-        '≗', # \circeq
-        'a',
+        # '∘', # \circ
+        # '⋯', # \cdots
         'æ', # \ae
+        '≗', # \circeq
         '¢',
-        'π', # \pi
+        # 'a',
+        # 'π', # \pi
         'Þ', # \TH
-        '$',
+        # '$',
         # 'ℵ', # \aleph  not supported in this font :(
         '§', # \S
-        '€', # \euro
-        'ß', # \ss
-        '&',
-        'G',
+        # '€', # \euro
+        # 'ß', # \ss
+        # '&',
+        # 'G',
         'Ä', # A\ddot
     ],
 
@@ -113,7 +112,6 @@ const ASCII_CHARS_BY_SHAPE_THEN_DENSITY = Dict(
     ]
 )
 function get_char_by_density(group::E_CharShapeType, density::Float32)
-    chars = ASCII_CHARS_BY_SHAPE_THEN_DENSITY[group]
     raw_idx = 1 + round(Int, density * length(group))
     return group[clamp(raw_idx, 1, length(group))]
 end

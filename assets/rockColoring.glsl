@@ -55,7 +55,7 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
 
     mOuts[MINERAL_storage] = defineMineralSurface(
         MINERAL_COLOR_storage, MINERAL_SHAPE_storage,
-        NOISED(1,   0.23, 0.43,   1.0),
+        NOISED(1,   0.23, 0.73,   1.0),
         MINERAL_COLOR_storage, 0.1,
         CHATTED(0.0, 50.0, 0.5)
     );
@@ -67,13 +67,13 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
     );
     mOuts[MINERAL_drill] = defineMineralSurface(
         MINERAL_COLOR_drill, MINERAL_SHAPE_drill,
-        NOISED(1,    0.2, 0.3,   4.0),
+        NOISED(1,    0.1, 0.63,   4.0),
         1, NOISED(2,    0.05, 0.3,     5.0),
         CHATTED(0.0, 90.0, 0.5)
     );
     mOuts[MINERAL_specials] = defineMineralSurface(
         MINERAL_COLOR_specials, MINERAL_SHAPE_specials,
-        NOISED(1,    0.6, 1,   6.0),
+        NOISED(1,    0.2, 1,   6.0),
         1, 0.0,
         CHATTED(0.0, 110.0, 0.5)
     );
@@ -85,14 +85,14 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
     );
     mOuts[MINERAL_maneuvers] = defineMineralSurface(
         MINERAL_COLOR_maneuvers, MINERAL_SHAPE_maneuvers,
-        0.275,
+        0.475,
         MINERAL_COLOR_maneuvers, NOISED(2,    0.05, 0.7,     5.0),
         CHATTED(0.0, 150.0, 0.5)
     );
 
     //Plain rock:
     mOuts[N_MINERALS] = defineMineralSurface(
-        1, SHAPE_round, NOISED(1,    0.05, 0.4,    3.0),
+        1, SHAPE_round, NOISED(1,    0.05, 0.9,    5.0),
         1,              NOISED(0,    0.0,  0.15,   1.5),
         NOISED(1,    0.0, 2.0,    8.0)
     );
@@ -112,19 +112,32 @@ MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, ivec3 gridC
     else
         posAlongSurface = worldPos.yz;
 
+    //Evaluate a global 3D Perlin noise with enough scale
+    //    that every rock surface spans the full value range.
+    //Interpolate that noise as a mineral index.
+    float mineralNoise = perlinNoise(worldPos * 4.0, 2.2222222);
+    float mineralIdxF = clamp(
+        mix(-0.4999, float(N_MINERALS-1) + 0.4999, mineralNoise),
+        0.0, float(N_MINERALS-1)
+    );
+    int mineralIdx = int(mineralIdxF);
+    float mineralIdxStrengthT = 1.0 - (distance(float(mineralIdx) + 0.5, mineralIdxF) * 2.0);
+
+
     //Define the surface properties of each mineral, and plain rock.
     MaterialSurface mineralSurfaces[N_MINERALS_AND_ROCK];
     defineMineralSurfaces(mineralSurfaces,
                           worldPos, uv, normal, gridCell,
                           posAlongSurface, worldPos - u_world_cam.cam_pos.xyz);
 
-    //Pick the surface data of the densest mineral in this rock.
-    int densestI = 0;
-    mineralDensitiesThenRock[N_MINERALS] = 0.0001; //Make plain rock the last resort
-    for (int i = 1; i < N_MINERALS_AND_ROCK; ++i)
-        if (mineralDensitiesThenRock[i] > mineralDensitiesThenRock[densestI])
-            densestI = i;
-    MaterialSurface surface = mineralSurfaces[densestI];
-
-    return surface;
+    //Color the current mineral, replacing with plain rock depending on the mineral's density.
+    MaterialSurface mineralChoice[] = {
+        mineralSurfaces[N_MINERALS],
+        mineralSurfaces[mineralIdx]
+    };
+    return mineralChoice[clamp(
+        int(step(mineralIdxStrengthT,
+                 mineralDensitiesThenRock[mineralIdx])),
+        0, 1
+    )];
 }
