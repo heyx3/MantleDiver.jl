@@ -30,7 +30,7 @@ mutable struct Mission
                                       rand(UInt32),
                                       PLAYER_START_POS,
                                       5, 0.39,
-                                      3, 0.48, 2.4)
+                                      3, 0.48, 1.0)
             get_component(entity, GridManager)
         end
         services = let entity = add_entity(world)

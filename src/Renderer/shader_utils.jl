@@ -426,25 +426,31 @@ const SHADER_CODE_UTILS = """
     //Outputs its position, and returns whether or not it really exists.
     bool getWorleyPoint(float cell, float chanceOfPoint, float seed, out float pos)
     {
-        vec2 rng = hashTo2(vec2(cell * 450.0, seed)).xy;
-
+        vec2 rng = hashTo2(vec2(cell * 450.0, seed));
         pos = cell + rng.x;
         return (rng.y < chanceOfPoint);
     }
     bool getWorleyPoint(vec2 cell, float chanceOfPoint, float seed, out vec2 pos)
     {
-        vec3 rng = hashTo3(vec3(cell, seed) * 450.0).xyz;
-
+        vec3 rng = hashTo3(vec3(cell * 450.0, seed));
         pos = cell + rng.xy;
         return (rng.z < chanceOfPoint);
+    }
+    bool getWorleyPoint(vec3 cell, float chanceOfPoint, float seed, out vec3 pos)
+    {
+        vec4 rng = hashTo4(vec4(cell * 450.0, seed));
+        pos = cell + rng.xyz;
+        return (rng.w < chanceOfPoint);
     }
 
     //Generates worley-noise points that might influence the given position.
     //See the below functions for common use-cases.
     void worleyPoints(float x, float chanceOfPoint, float seed,
-                    out int outNPoints, out float outPoints[3]);
+                      out int outNPoints, out float outPoints[3]);
     void worleyPoints(vec2 x, float chanceOfPoint, float seed,
-                    out int outNPoints, out float outPoints[3]);
+                      out int outNPoints, out vec2 outPoints[9]);
+    void worleyPoints(vec3 x, float chanceOfPoint, float seed,
+                      out int outNPoints, out vec3 outPoints[27]);
     //Implementation below:
     #define IMPL_WORLEY_START(T)                                    \
         T xCenter = floor(x),                                       \
@@ -458,7 +464,7 @@ const SHADER_CODE_UTILS = """
             points[nPoints++] = nextPoint
     //end #define
     void worleyPoints(float x, float chanceOfPoint, float seed,
-                    out int nPoints, out float points[3])
+                      out int nPoints, out float points[3])
     {
         IMPL_WORLEY_START(float);
         IMPL_WORLEY_POINT(xMin);
@@ -466,7 +472,7 @@ const SHADER_CODE_UTILS = """
         IMPL_WORLEY_POINT(xMax);
     }
     void worleyPoints(vec2 x, float chanceOfPoint, float seed,
-                    out int nPoints, out vec2 points[9])
+                      out int nPoints, out vec2 points[9])
     {
         IMPL_WORLEY_START(vec2);
 
@@ -483,10 +489,46 @@ const SHADER_CODE_UTILS = """
         IMPL_WORLEY_POINT(vec2(xMax.x, xMin.y));
         IMPL_WORLEY_POINT(vec2(xMax.x, xCenter.y));
     }
+    void worleyPoints(vec3 x, float chanceOfPoint, float seed,
+                      out int nPoints, out vec3 points[27])
+    {
+        IMPL_WORLEY_START(vec3);
+
+        IMPL_WORLEY_POINT(vec3(xMin.x, xMin.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xMin.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xMin.y, xMax.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xCenter.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xCenter.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xCenter.y, xMax.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xMax.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xMax.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xMin.x, xMax.y, xMax.z));
+
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xMin.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xMin.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xMin.y, xMax.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xCenter.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xCenter.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xCenter.y, xMax.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xMax.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xMax.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xCenter.x, xMax.y, xMax.z));
+
+        IMPL_WORLEY_POINT(vec3(xMax.x, xMin.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xMin.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xMin.y, xMax.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xCenter.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xCenter.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xCenter.y, xMax.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xMax.y, xMin.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xMax.y, xCenter.z));
+        IMPL_WORLEY_POINT(vec3(xMax.x, xMax.y, xMax.z));
+    }
 
     //Variant 1: straight-line distance, to the nearest point.
     float worley1(float x, float chanceOfPoint, float seed);
     float worley1(vec2 x, float chanceOfPoint, float seed);
+    float worley1(vec3 x, float chanceOfPoint, float seed);
     //Implementation below:
     #define IMPL_WORLEY1(T, nMaxPoints)                                              \
     float worley1(T x, float chanceOfPoint, float seed) {                            \
@@ -507,10 +549,12 @@ const SHADER_CODE_UTILS = """
     //end #define
     IMPL_WORLEY1(float, 3)
     IMPL_WORLEY1(vec2,  9)
+    IMPL_WORLEY1(vec3,  27)
 
     //Variant 2: manhattan distance, to the nearest point.
     float worley2(float x, float chanceOfPoint, float seed);
     float worley2(vec2 x, float chanceOfPoint, float seed);
+    float worley2(vec3 x, float chanceOfPoint, float seed);
     //Implementation below:
     #define IMPL_WORLEY2(T, nMaxPoints)                                              \
     float worley2(T x, float chanceOfPoint, float seed) {                            \
@@ -531,10 +575,12 @@ const SHADER_CODE_UTILS = """
     //end #define
     IMPL_WORLEY2(float, 3)
     IMPL_WORLEY2(vec2,  9)
+    IMPL_WORLEY2(vec3,  27)
 
     //Variant 3: straight-line distance, to the second- nearest point.
     float worley3(float x, float chanceOfPoint, float seed);
-    float worley3(vec2 x, float chanceOfPoint, float seed);
+    float worley2(vec2 x, float chanceOfPoint, float seed);
+    float worley3(vec3 x, float chanceOfPoint, float seed);
     //Implementation below:
     #define IMPL_WORLEY3(T, nMaxPoints)                                              \
     float worley3(T x, float chanceOfPoint, float seed) {                            \
@@ -561,6 +607,7 @@ const SHADER_CODE_UTILS = """
     //end #define
     IMPL_WORLEY3(float, 3)
     IMPL_WORLEY3(vec2,  9)
+    IMPL_WORLEY3(vec3,  27)
 
     //TODO: More variants
 

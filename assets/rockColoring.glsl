@@ -112,32 +112,25 @@ MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, ivec3 gridC
     else
         posAlongSurface = worldPos.yz;
 
-    //Evaluate a global 3D Perlin noise with enough scale
-    //    that every rock surface spans the full value range.
-    //Interpolate that noise as a mineral index.
-    float mineralNoise = perlinNoise(worldPos * 4.0, 2.2222222);
-    float mineralIdxF = clamp(
-        mix(-0.4999, float(N_MINERALS-1) + 0.4999, mineralNoise),
-        0.0, float(N_MINERALS-1)
-    );
-    int mineralIdx = int(mineralIdxF);
-    float mineralIdxStrengthT = 1.0 - (distance(float(mineralIdx) + 0.5, mineralIdxF) * 2.0);
+    //Get the primary mineral in this rock.
+    mineralDensitiesThenRock[N_MINERALS] = 0.00001;
+    int mineralIdx = 0;
+    float mineralDensity = mineralDensitiesThenRock[0];
+    for (int i = 1; i < N_MINERALS_AND_ROCK; ++i)
+        if (mineralDensitiesThenRock[i] > mineralDensity)
+        {
+            mineralIdx = i;
+            mineralDensity = mineralDensitiesThenRock[i];
+        }
 
+    //Evaluate a global 3D noise that interpolates between this rock's mineral and a plain surface.
+    float mineralNoise = worley3(worldPos * 3.50, 1.0, 2.2222222);
+    bool isMineral = (mineralNoise > mix(0.43, 0.73, mineralDensity));
 
-    //Define the surface properties of each mineral, and plain rock.
+    //Pick the kind surface to render here.
     MaterialSurface mineralSurfaces[N_MINERALS_AND_ROCK];
     defineMineralSurfaces(mineralSurfaces,
                           worldPos, uv, normal, gridCell,
                           posAlongSurface, worldPos - u_world_cam.cam_pos.xyz);
-
-    //Color the current mineral, replacing with plain rock depending on the mineral's density.
-    MaterialSurface mineralChoice[] = {
-        mineralSurfaces[N_MINERALS],
-        mineralSurfaces[mineralIdx]
-    };
-    return mineralChoice[clamp(
-        int(step(mineralIdxStrengthT,
-                 mineralDensitiesThenRock[mineralIdx])),
-        0, 1
-    )];
+    return isMineral ? mineralSurfaces[mineralIdx] : mineralSurfaces[N_MINERALS];
 }
