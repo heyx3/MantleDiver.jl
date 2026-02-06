@@ -40,6 +40,8 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
         perlinNoise(worldPos * 4, 5.334498471),
         perlinNoise(worldPos * 8, 0.7),
         perlinNoise(worldPos * 4, 1.42341),
+        worley2(worldPosAlongSurface * 2, 0.5, -1.3321310),
+        worley1(worldPosAlongSurface * 3, 0.5, -1.3321310)
     };
     #define NOISED(i, a, b, exponent) (mix(float(a), float(b), pow(noises[i], float(exponent))))
 
@@ -55,7 +57,7 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
 
     mOuts[MINERAL_storage] = defineMineralSurface(
         MINERAL_COLOR_storage, MINERAL_SHAPE_storage,
-        NOISED(1,   0.23, 0.73,   1.0),
+        NOISED(5,   0.23, 0.73,   1.0),
         MINERAL_COLOR_storage, 0.1,
         CHATTED(0.0, 50.0, 0.5)
     );
@@ -67,7 +69,7 @@ void defineMineralSurfaces(out MaterialSurface mOuts[N_MINERALS_AND_ROCK],
     );
     mOuts[MINERAL_drill] = defineMineralSurface(
         MINERAL_COLOR_drill, MINERAL_SHAPE_drill,
-        NOISED(1,    0.1, 0.63,   4.0),
+        NOISED(5,    0.1, 0.63,   4.0),
         1, NOISED(2,    0.05, 0.3,     5.0),
         CHATTED(0.0, 90.0, 0.5)
     );
@@ -124,8 +126,9 @@ MaterialSurface getRockMaterial(vec3 worldPos, vec2 uv, vec3 normal, ivec3 gridC
         }
 
     //Evaluate a global 3D noise that interpolates between this rock's mineral and a plain surface.
-    float mineralNoise = worley3(worldPos * 3.50, 1.0, 2.2222222);
-    bool isMineral = (mineralNoise > mix(0.43, 0.73, mineralDensity));
+    float mineralNoise = worley3(worldPos * 1.0, 1.0, 2.2222222),
+          mineralCentrality = border(mineralNoise, 0.0, 1.0, 1.0);
+    bool isMineral = (mineralCentrality < mineralDensity*1.0);
 
     //Pick the kind surface to render here.
     MaterialSurface mineralSurfaces[N_MINERALS_AND_ROCK];

@@ -13,14 +13,17 @@
 )
 const N_MINERALS = length(Mineral.instances())
 
-"Defines the overall representation of each mineral, for UI and shader purposes"
+"
+Defines the overall representation of each mineral, for UI and shader purposes.
+Color palette values are 0-based.
+"
 const MINERAL_PALETTE = Dict{E_Mineral, Tuple{E_CharShapeType, Int}}(
-    Mineral.storage   => (CharShapeType.block, 6),
-    Mineral.hull      => (CharShapeType.block, 2),
-    Mineral.drill     => (CharShapeType.unusual, 6),
-    Mineral.specials  => (CharShapeType.unusual, 7),
-    Mineral.sensors   => (CharShapeType.tall, 4),
-    Mineral.maneuvers => (CharShapeType.wide, 4)
+    Mineral.storage   => (CharShapeType.block, 4),
+    Mineral.hull      => (CharShapeType.block, 3),
+    Mineral.drill     => (CharShapeType.unusual, 4),
+    Mineral.specials  => (CharShapeType.unusual, 3),
+    Mineral.sensors   => (CharShapeType.tall, 2),
+    Mineral.maneuvers => (CharShapeType.wide, 2)
 )
 
 "Some per-mineral data, stored in an immutable array"
